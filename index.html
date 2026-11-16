@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Replaced by --base-href at build time (/balloons/ for GitHub Pages). -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Luke Morse: balloon letters you can play">
+  <meta name="theme-color" content="#fff4e6">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <title>Luke Morse</title>
+
+  <style>
+    :root { --bg: #fff4e6; --ink: #3a2f2a; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+    body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+    #stage {
+      position: fixed; inset: 0;
+      touch-action: none; /* no page scroll or pinch-zoom while playing */
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <script type="module" src="balloon_audio.js"></script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
