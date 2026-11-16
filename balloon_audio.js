@@ -11,7 +11,9 @@
 // the precompiled wasm + metadata and the small faustwasm runtime, never the
 // Faust compiler. Nothing touches audio until the first user gesture.
 
-const VOICES = ['l', 'u', 'k', 'e'];
+// ?wild swaps in the experimental unhinged voices (dsp/*_wild.dsp).
+const WILD = new URLSearchParams(location.search).has('wild');
+const VOICES = ['l', 'u', 'k', 'e'].map((v) => (WILD ? `${v}_wild` : v));
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const asset = (p) => new URL(p, document.baseURI).href;
 
