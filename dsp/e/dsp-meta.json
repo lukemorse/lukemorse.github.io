@@ -14,7 +14,6 @@
         "/usr/share/faust/noises.lib",
         "/usr/share/faust/filters.lib",
         "/usr/share/faust/routes.lib",
-        "/usr/share/faust/envelopes.lib",
         "/usr/share/faust/spats.lib"
     ],
     "include_pathnames": [
@@ -25,7 +24,7 @@
         "/usr/share/faust",
         "."
     ],
-    "size": 279140,
+    "size": 279164,
     "inputs": 0,
     "outputs": 2,
     "meta": [
@@ -37,24 +36,6 @@
         },
         {
             "compile_options": "-lang wasm-i -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 2"
-        },
-        {
-            "envelopes.lib/asr:author": "Yann Orlarey, Stéphane Letz"
-        },
-        {
-            "envelopes.lib/author": "GRAME"
-        },
-        {
-            "envelopes.lib/copyright": "GRAME"
-        },
-        {
-            "envelopes.lib/license": "LicenseRef-LGPL-2.1-or-later-with-Faust-exception"
-        },
-        {
-            "envelopes.lib/name": "Faust Envelope Library"
-        },
-        {
-            "envelopes.lib/version": "1.3.3"
         },
         {
             "filename": "e"
@@ -251,7 +232,7 @@
                     "varname": "fEntry1",
                     "shortname": "gate",
                     "address": "/e/gate",
-                    "index": 278960,
+                    "index": 278972,
                     "init": 0,
                     "min": 0,
                     "max": 1,

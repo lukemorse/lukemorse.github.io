@@ -24,9 +24,11 @@ dsp/u/dsp-module.wasm
 faustwasm/COPYING.txt
 faustwasm/index.js
 favicon.png
+favicon.svg
 flutter_bootstrap.js
 flutter_service_worker.js
 flutter.js
+icons/Icon-180.png
 icons/Icon-192.png
 icons/Icon-512.png
 icons/Icon-maskable-192.png

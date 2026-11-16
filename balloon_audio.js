@@ -3,6 +3,7 @@
 // Narrow API on window.balloonAudio (Dart reaches it via lib/audio/js_bridge.dart):
 //   init()                    -> Promise<boolean>  create/resume audio; call from a gesture
 //   setParam(voice, name, v)  set "inflate" | "bend" | "wobble" | "pop" | "gate"
+//                             voice 0..3 = L U K E classic, 4..7 = L U K E wild
 //   gate(voice, on)           shorthand for setParam(voice, "gate", 0|1)
 //   isRunning()               -> boolean  context running and voices loaded
 //   debugLevel()              -> number   output RMS, for checking that sound plays
@@ -11,9 +12,10 @@
 // the precompiled wasm + metadata and the small faustwasm runtime, never the
 // Faust compiler. Nothing touches audio until the first user gesture.
 
-// ?wild swaps in the experimental unhinged voices (dsp/*_wild.dsp).
-const WILD = new URLSearchParams(location.search).has('wild');
-const VOICES = ['l', 'u', 'k', 'e'].map((v) => (WILD ? `${v}_wild` : v));
+// Both sets are loaded; the balloon button in the corner (Dart side) picks
+// which one the letters play. The wild set is dsp/*_wild.dsp.
+const LETTERS = ['l', 'u', 'k', 'e'];
+const VOICES = [...LETTERS, ...LETTERS.map((v) => `${v}_wild`)];
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const asset = (p) => new URL(p, document.baseURI).href;
 

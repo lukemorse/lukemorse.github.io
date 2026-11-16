@@ -7,13 +7,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Luke Morse: balloon letters you can play">
-  <meta name="theme-color" content="#fff4e6">
-  <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff4e6">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+  <link rel="apple-touch-icon" href="icons/Icon-180.png">
   <title>Luke Morse</title>
 
   <style>
-    :root { --bg: #fff4e6; --ink: #3a2f2a; }
+    :root { --bg: #fff4e6; --ink: #3a2f2a; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #000000; --ink: #f2e8dc; }
+    }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
     body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
     #stage {
