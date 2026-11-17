@@ -7,6 +7,12 @@
 //   gate(voice, on)           shorthand for setParam(voice, "gate", 0|1)
 //   isRunning()               -> boolean  context running and voices loaded
 //   debugLevel()              -> number   output RMS, for checking that sound plays
+//   startRecording()          -> boolean  record the mix (sound only); call from a gesture
+//   stopRecording()           -> Promise<File|null>  the clip so far
+//   isRecording()             -> boolean
+//   canRecord()               -> boolean  MediaRecorder available
+//
+// Each pop also buzzes the phone (navigator.vibrate, Android only).
 //
 // The DSP is compiled ahead of time (npm run build:dsp). Here we only fetch
 // the precompiled wasm + metadata and the small faustwasm runtime, never the
@@ -23,6 +29,7 @@ const asset = (p) => new URL(p, document.baseURI).href;
 let ctx = null;
 let master = null;
 let analyser = null;
+let recDest = null; // MediaStreamAudioDestinationNode the recorder listens to
 let prefetched = null; // Promise<{FaustMonoDspGenerator, dsps}>
 let loading = null; // Promise<boolean>
 const nodes = new Map(); // voice index -> Faust node
@@ -147,6 +154,10 @@ function ensureContext() {
     master.connect(limiter);
     limiter.connect(ctx.destination);
     limiter.connect(analyser);
+    if (ctx.createMediaStreamDestination) {
+      recDest = ctx.createMediaStreamDestination();
+      limiter.connect(recDest);
+    }
   }
   return true;
 }
@@ -202,6 +213,7 @@ function init() {
 function setParam(voice, name, value) {
   const store = latest[voice];
   if (!store) return;
+  if (name === 'pop' && store.get(name) !== value) buzz();
   store.set(name, value);
   const node = nodes.get(voice);
   const path = paramPaths.get(voice)?.get(name);
@@ -225,7 +237,89 @@ function debugLevel() {
   return Math.sqrt(s / levelBuf.length);
 }
 
-window.balloonAudio = { init, setParam, gate, isRunning, debugLevel };
+// A short buzz on pop. Android only; elsewhere vibrate is missing or a no-op.
+function buzz() {
+  try {
+    navigator.vibrate?.(30);
+  } catch (_) {}
+}
+
+// ---------------------------------------------------------------- recording
+
+const REC_TYPES = [
+  ['audio/mp4', 'm4a'], // Safari
+  // .weba, not .webm: Chrome's share sheet only takes audio/webm as .weba.
+  ['audio/webm;codecs=opus', 'weba'], // Chrome, Firefox
+  ['audio/ogg;codecs=opus', 'ogg'],
+];
+const REC_MAX_MS = 60000;
+let recorder = null;
+let recChunks = [];
+let recDone = null; // Promise<File|null> for the recording in progress
+let recTimer = 0;
+
+function canRecord() {
+  return typeof MediaRecorder !== 'undefined' && !!AudioContextClass;
+}
+
+function startRecording() {
+  if (!canRecord() || recorder) {
+    console.warn(`[rec] can't start: canRecord ${canRecord()}, already recording ${!!recorder} (${recorder?.state})`);
+    return false;
+  }
+  init(); // a gesture: unlock audio too, so recording can be the first thing you do
+  if (!recDest) {
+    console.warn('[rec] no MediaStream destination on this AudioContext');
+    return false;
+  }
+  const [type, ext] = REC_TYPES.find(([t]) => MediaRecorder.isTypeSupported?.(t)) ?? ['', 'weba'];
+  try {
+    recorder = new MediaRecorder(recDest.stream, type ? { mimeType: type } : undefined);
+  } catch (err) {
+    console.error('[balloonAudio] MediaRecorder failed', err);
+    recorder = null;
+    return false;
+  }
+  recChunks = [];
+  recorder.ondataavailable = (e) => {
+    if (e.data.size) recChunks.push(e.data);
+  };
+  recDone = new Promise((resolve) => {
+    recorder.onstop = () => {
+      const mime = recorder.mimeType || type || 'audio/webm';
+      const blob = new Blob(recChunks, { type: mime });
+      console.info(`[rec] stopped: ${recChunks.length} chunks, ${blob.size} bytes`);
+      recorder = null;
+      recChunks = [];
+      clearTimeout(recTimer);
+      // Chrome's share sheet refuses an .m4a typed audio/mp4 ("Permission
+      // denied") but takes the same file as audio/x-m4a.
+      const fileType = ext === 'm4a' ? 'audio/x-m4a' : mime.split(';')[0];
+      resolve(blob.size ? new File([blob], `balloons.${ext}`, { type: fileType }) : null);
+    };
+  });
+  recorder.start(1000);
+  console.info(`[rec] recording ${recorder.mimeType || type || '(default type)'}`);
+  recTimer = setTimeout(() => recorder?.state === 'recording' && recorder.stop(), REC_MAX_MS);
+  return true;
+}
+
+// Also collects a clip that already stopped itself at REC_MAX_MS.
+function stopRecording() {
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  const done = recDone ?? Promise.resolve(null);
+  recDone = null;
+  return done;
+}
+
+function isRecording() {
+  return !!recorder;
+}
+
+window.balloonAudio = {
+  init, setParam, gate, isRunning, debugLevel,
+  startRecording, stopRecording, isRecording, canRecord,
+};
 
 // Add ?debug to the URL to see the audio state on the page (handy on phones,
 // where the console is out of reach).

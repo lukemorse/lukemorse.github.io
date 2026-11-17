@@ -5,6 +5,7 @@ assets/NOTICES
 assets/shaders/ink_sparkle.frag
 assets/shaders/stretch_effect.frag
 balloon_audio.js
+balloon_input.js
 dsp/e_wild/dsp-meta.json
 dsp/e_wild/dsp-module.wasm
 dsp/e/dsp-meta.json

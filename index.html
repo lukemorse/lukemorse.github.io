@@ -29,14 +29,38 @@
       const current = () => saved || system();
       const listeners = [];
       const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-      const apply = () => {
+      // animate: whether Flutter should fade its colors (false: jump).
+      const apply = (animate = !reduce.matches) => {
         const t = current();
         document.documentElement.dataset.theme = t;
         document.querySelector('meta[name="theme-color"]')
           ?.setAttribute('content', t === 'dark' ? '#000000' : '#c2e0ff');
         document.getElementById('sky-toggle')
           ?.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-        for (const f of listeners) f(t === 'dark', !reduce.matches);
+        for (const f of listeners) f(t === 'dark', animate);
+      };
+      // Theme flip as a View Transition: the new theme is revealed in a
+      // circle growing out of the sun/moon. Inside the transition everything
+      // switches instantly (.vt-instant stops the CSS color fades, and Flutter
+      // jumps); ::view-transition-new(root) is live, so Flutter's next frame
+      // still shows up in it. Without the API (or with reduced motion), the
+      // colors just fade as before.
+      let vtToken = null;
+      const flip = () => {
+        const root = document.documentElement;
+        const btn = document.getElementById('sky-toggle');
+        if (!document.startViewTransition || reduce.matches || !btn) return apply();
+        const b = btn.getBoundingClientRect();
+        const x = b.left + b.width / 2, y = b.top + b.height / 2;
+        const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+        const token = vtToken = {};
+        root.classList.add('vt-instant');
+        const vt = document.startViewTransition(() => apply(false));
+        vt.ready.then(() => root.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${r}px at ${x}px ${y}px)`] },
+          { duration: 700, easing: 'cubic-bezier(.45, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' },
+        )).catch(() => {});
+        vt.finished.finally(() => { if (vtToken === token) root.classList.remove('vt-instant'); });
       };
       mq.addEventListener?.('change', () => { if (!saved) apply(); });
       window.balloonTheme = {
@@ -46,9 +70,9 @@
           const next = current() === 'dark' ? 'light' : 'dark';
           saved = next === system() ? null : next;
           try { saved ? localStorage.setItem(KEY, saved) : localStorage.removeItem(KEY); } catch {}
-          apply();
+          flip();
         },
-        apply,
+        apply: () => apply(),
         // Which balloon set is showing (lib/stage.dart); picks the letter colors below.
         setWild: (wild) => { document.documentElement.dataset.set = wild ? 'wild' : 'classic'; },
       };
@@ -66,8 +90,16 @@
     @property --card { syntax: "<color>"; inherits: true; initial-value: #fffaf3; }
     @property --cloud { syntax: "<color>"; inherits: true; initial-value: #ffffff; }
     :root { transition: --bg .6s ease, --ink .6s ease, --card .6s ease, --cloud .6s ease; }
-    :root { --bg: #c2e0ff; --ink: #3a2f2a; color-scheme: light; }
-    :root[data-theme="dark"] { --bg: #000000; --ink: #f2e8dc; color-scheme: dark; }
+    /* During the theme View Transition everything switches at once (see flip()). */
+    :root.vt-instant { transition: none; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+    /* Theme colors are light-dark(day, night) pairs, picked by color-scheme. */
+    :root { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    :root {
+      --bg: light-dark(#c2e0ff, #000000); --ink: light-dark(#3a2f2a, #f2e8dc);
+      --card: light-dark(#fffaf3, #1c1714); --cloud: light-dark(#ffffff, #221d19);
+    }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
 
     /* Subtle sun (light) or moon (dark) tucked into the top-right corner
@@ -146,9 +178,8 @@
     #footer-placeholder {
       position: fixed; left: 0; right: 0; bottom: 0; height: 110px;
       pointer-events: none; overflow: hidden;
-      --cloud-back: #eaf5ff;
+      --cloud-back: light-dark(#eaf5ff, #15120f);
     }
-    :root[data-theme="dark"] #footer-placeholder { --cloud-back: #15120f; }
     #footer-placeholder svg { display: block; width: 100%; height: 100%; }
 
     /* Info button + card, over the footer's left slot (the footer itself is
@@ -157,16 +188,18 @@
        per theme and set, the same one the footer and swap balloon use.
        KEEP IN SYNC with BalloonPalette.day / .night (lib/paint/palette.dart).
        <html data-set> comes from Flutter (balloonTheme.setWild). */
-    :root { --l: #E53935; --u: #3F51B5; --k: #43A047; --e: #3D7BFF; --card: #fffaf3; --cloud: #ffffff; }
-    :root[data-set="wild"] { --l: #00D9A6; --u: #7ED957; --k: #B04FFF; --e: #FF4FA3; }
-    :root[data-theme="dark"] { --l: #F0544F; --u: #6474D6; --k: #5DB861; --e: #5B8DFF; --card: #1c1714; --cloud: #221d19; }
-    :root[data-theme="dark"][data-set="wild"] { --l: #2ECDA5; --u: #86D06A; --k: #B672F5; --e: #F06AAE; }
+    :root {
+      --l: light-dark(#E53935, #F0544F); --u: light-dark(#3F51B5, #6474D6);
+      --k: light-dark(#43A047, #5DB861); --e: light-dark(#3D7BFF, #5B8DFF);
+    }
+    :root[data-set="wild"] {
+      --l: light-dark(#00D9A6, #2ECDA5); --u: light-dark(#7ED957, #86D06A);
+      --k: light-dark(#B04FFF, #B672F5); --e: light-dark(#FF4FA3, #F06AAE);
+    }
     /* Each letter's second gradient color (only L and E are used, for the
        icon hovers). Same KEEP IN SYNC as above. */
-    :root { --l2: #FF9800; --e2: #8E44E8; }
-    :root[data-set="wild"] { --l2: #FFE03B; --e2: #FFC233; }
-    :root[data-theme="dark"] { --l2: #F5A23A; --e2: #A066F0; }
-    :root[data-theme="dark"][data-set="wild"] { --l2: #F2DA5C; --e2: #F2C35A; }
+    :root { --l2: light-dark(#FF9800, #F5A23A); --e2: light-dark(#8E44E8, #A066F0); }
+    :root[data-set="wild"] { --l2: light-dark(#FFE03B, #F2DA5C); --e2: light-dark(#FFC233, #F2C35A); }
     /* Text-safe versions (-t): the same hue with OKLCH lightness capped at
        .52, which keeps at least 4.5:1 against the light card and against
        white text on top. Without relative colors, fall back to the day ink. */
@@ -180,17 +213,25 @@
     }
     /* Display versions (-d) for the big "Hello!": capped at .62 instead, about
        3:1 (enough for big decorative letters) and less muddy than -t. */
-    :root { --l-d: var(--l-t); --u-d: var(--u-t); --k-d: var(--k-t); --e-d: var(--e-t); }
+    /* (At night they're just the plain colors.) */
+    :root {
+      --l-d: light-dark(var(--l-t), var(--l)); --u-d: light-dark(var(--u-t), var(--u));
+      --k-d: light-dark(var(--k-t), var(--k)); --e-d: light-dark(var(--e-t), var(--e));
+    }
     @supports (color: oklch(from red l c h)) {
-      :root:not([data-theme="dark"]) {
-        --l-d: oklch(from var(--l) min(l, .62) c h); --u-d: oklch(from var(--u) min(l, .62) c h);
-        --k-d: oklch(from var(--k) min(l, .62) c h); --e-d: oklch(from var(--e) min(l, .62) c h);
+      :root {
+        --l-d: light-dark(oklch(from var(--l) min(l, .62) c h), var(--l));
+        --u-d: light-dark(oklch(from var(--u) min(l, .62) c h), var(--u));
+        --k-d: light-dark(oklch(from var(--k) min(l, .62) c h), var(--k));
+        --e-d: light-dark(oklch(from var(--e) min(l, .62) c h), var(--e));
       }
     }
-    :root[data-theme="dark"] { --l-d: var(--l); --u-d: var(--u); --k-d: var(--k); --e-d: var(--e); }
-    /* Text on the dark card: the plain colors are already light enough. */
-    :root[data-theme="dark"] { --l-h: var(--l); --u-h: var(--u); --k-h: var(--k); --e-h: var(--e); }
-    :root:not([data-theme="dark"]) { --l-h: var(--l-t); --u-h: var(--u-t); --k-h: var(--k-t); --e-h: var(--e-t); }
+    /* Link hover text: text-safe by day; on the dark card the plain colors
+       are already light enough. */
+    :root {
+      --l-h: light-dark(var(--l-t), var(--l)); --u-h: light-dark(var(--u-t), var(--u));
+      --k-h: light-dark(var(--k-t), var(--k)); --e-h: light-dark(var(--e-t), var(--e));
+    }
     #info {
       position: fixed; z-index: 2;
       left: calc(env(safe-area-inset-left) + 16px);
@@ -209,7 +250,7 @@
     }
     #info:hover { animation-play-state: paused; transform: scale(1.12) rotate(-8deg); }
     #info:active { transform: scale(.88); }
-    #info[aria-expanded="true"] { animation: none; transform: scale(1.05); }
+    body:has(#about:popover-open) #info { animation: none; transform: scale(1.05); }
     #info:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
 
     /* A puff of front cloud (FooterPainter.frontColor) in front of the i, so it
@@ -225,8 +266,67 @@
     }
     #info-puff::before { width: 24px; height: 24px; left: 4px; top: -12px; }
     #info-puff::after { width: 26px; height: 26px; right: 2px; top: -13px; }
+    /* Record button: the i's twin over the footer's right slot. A red dot;
+       while recording it turns red with a stop square, a pulsing ring and the
+       seconds above it; once stopped, a share arrow (or a download arrow where
+       sharing isn't available) to send the clip (web/balloon_audio.js records). */
+    #rec {
+      position: fixed; z-index: 2;
+      right: calc(env(safe-area-inset-right) + 16px);
+      bottom: calc(env(safe-area-inset-bottom) + 32px);
+      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+      display: grid; place-items: center;
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255,255,255,.85) 0 12%, rgba(255,255,255,0) 42%),
+        var(--card);
+      box-shadow: 0 3px 8px rgba(0,0,0,.18), inset 0 -3px 6px rgba(0,0,0,.12);
+      color: #fff; cursor: pointer; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      animation: bob 3s ease-in-out infinite; animation-delay: -1.5s;
+      transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .2s;
+    }
+    #rec[hidden], #rec-puff[hidden] { display: none; }
+    #rec:hover { animation-play-state: paused; transform: scale(1.12) rotate(8deg); }
+    #rec:active { transform: scale(.88); }
+    #rec:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
+    #rec .dot {
+      width: 14px; height: 14px; border-radius: 50%; background: var(--l);
+      transition: border-radius .2s, width .2s, height .2s, background-color .2s;
+    }
+    #rec .share, #rec .download { display: none; width: 20px; height: 20px; }
+    #rec .time {
+      position: absolute; bottom: calc(100% + 6px); left: 50%; translate: -50% 0;
+      font: 700 12px/1 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif;
+      font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap;
+    }
+    #rec[data-state="rec"] { background: var(--l); animation: rec-pulse 1.2s ease-out infinite; }
+    #rec[data-state="rec"] .dot { width: 12px; height: 12px; border-radius: 3px; background: #fff; }
+    #rec[data-state="busy"] .dot { opacity: .5; }
+    #rec[data-state="share"], #rec[data-state="download"] { background: var(--k-t); }
+    #rec[data-state="share"] .dot, #rec[data-state="download"] .dot { display: none; }
+    #rec[data-state="share"] .share, #rec[data-state="download"] .download { display: block; }
+    @keyframes rec-pulse {
+      0% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 0 color-mix(in srgb, var(--l) 55%, transparent); }
+      100% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 12px color-mix(in srgb, var(--l) 0%, transparent); }
+    }
+    /* Its puff of cloud, the i's mirrored. */
+    #rec-puff {
+      position: fixed; z-index: 3; pointer-events: none;
+      right: calc(env(safe-area-inset-right) + 6px);
+      bottom: calc(env(safe-area-inset-bottom) + 8px);
+      width: 56px; height: 20px; border-radius: 10px; background: var(--cloud);
+    }
+    #rec-puff::before, #rec-puff::after {
+      content: ""; position: absolute; border-radius: 50%; background: var(--cloud);
+    }
+    #rec-puff::before { width: 24px; height: 24px; right: 4px; top: -12px; }
+    #rec-puff::after { width: 26px; height: 26px; left: 2px; top: -13px; }
+
+    /* A native popover (top layer, light dismiss, Esc). The UA centers
+       popovers and clips their overflow; undo that so it sits by the i and
+       its tail shows. */
     #about {
-      position: fixed; z-index: 3;
+      position: fixed; z-index: 3; inset: auto; margin: 0; overflow: visible;
       left: calc(env(safe-area-inset-left) + 10px);
       bottom: calc(env(safe-area-inset-bottom) + 82px);
       box-sizing: border-box; width: min(310px, calc(100vw - 20px));
@@ -241,7 +341,20 @@
       font: 14.5px/1.5 ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", system-ui, sans-serif;
       -webkit-user-select: text; user-select: text; touch-action: auto;
       transform-origin: 24px calc(100% + 20px);
-      animation: pop-in .45s cubic-bezier(.2, 1.5, .4, 1);
+      /* Closed (and the exit): shrink back into the i. overlay/display
+         allow-discrete keep it shown in the top layer while it animates out. */
+      opacity: 0; transform: translateY(18px) scale(.3);
+      transition: opacity .18s ease-in, transform .22s ease-in,
+        overlay .22s allow-discrete, display .22s allow-discrete;
+    }
+    #about:popover-open {
+      opacity: 1; transform: none;
+      transition: opacity .25s ease-out, transform .45s cubic-bezier(.2, 1.5, .4, 1),
+        overlay .45s allow-discrete, display .45s allow-discrete;
+    }
+    /* Where the entry starts from. */
+    @starting-style {
+      #about:popover-open { opacity: 0; transform: translateY(18px) scale(.3); }
     }
     /* speech-bubble tail pointing at the i */
     #about::after {
@@ -252,7 +365,6 @@
       border-right: 3px solid var(--u); border-bottom: 3px solid var(--u);
       border-bottom-right-radius: 5px;
     }
-    #about[hidden] { display: none; }
     #about:focus { outline: none; } /* focused programmatically on open */
     #about h2 {
       margin: 0 0 8px; font-size: 18px; font-weight: 800; letter-spacing: .5px;
@@ -278,7 +390,32 @@
       background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.8) 0 15%, transparent 45%), var(--c);
     }
     #about li:nth-child(1) { --c: var(--l); --c-h: var(--l-h); }
-    #about li:nth-child(2) { --c: var(--k); --c-h: var(--k-h); }
+    #about li:nth-child(2) { --c: var(--u); --c-h: var(--u-h); }
+    #about li:nth-child(3) { --c: var(--k); --c-h: var(--k-h); }
+    /* The keyboard and MIDI line only makes sense with a keyboard around. */
+    @media (hover: none) and (pointer: coarse) { #about li.keys { display: none; } }
+    #about kbd {
+      display: inline-block; min-width: 1.1em; padding: 0 .3em; border-radius: 5px;
+      font: 700 12px/1.5 ui-monospace, monospace; text-align: center;
+      background: color-mix(in srgb, var(--ink) 8%, transparent);
+      box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--ink) 22%, transparent);
+    }
+    /* Looks like the inline links. */
+    #about li button.midi {
+      padding: 0; border: 0; background: none; color: inherit; cursor: pointer;
+      font: inherit; font-weight: 700;
+      text-decoration: underline 2px var(--c); text-underline-offset: 3px;
+    }
+    #about li button.midi:hover { color: var(--c-h); }
+    #about li button.midi:disabled { cursor: default; text-decoration: none; color: inherit; }
+    /* The input picker, once there's more than one keyboard to choose from. */
+    #about li select.midi-pick {
+      max-width: 100%; padding: 0 .1em; border: 0; border-bottom: 2px solid var(--c);
+      border-radius: 0; background: none; color: inherit; cursor: pointer;
+      font: inherit; font-weight: 700;
+    }
+    #about li select.midi-pick:hover { color: var(--c-h); }
+    #about li select.midi-pick option { color: initial; }
     /* inline links: ink text, underline in the bullet's balloon color */
     #about li a {
       color: inherit; font-weight: 700;
@@ -323,16 +460,11 @@
     }
     #about .close:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
 
-    @keyframes pop-in {
-      0% { opacity: 0; transform: translateY(18px) scale(.3); }
-      60% { opacity: 1; }
-      100% { transform: none; }
-    }
     @keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
     @keyframes wiggle { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-3px) rotate(-6deg); } 90% { transform: translateY(0) rotate(4deg); } }
     @media (prefers-reduced-motion: reduce) {
-      #info, #about, #about h2 span, #sun::before, #sun::after, #moon::before { animation: none; }
-      .sky, :root { transition: none; }
+      #info, #rec, #about h2 span, #sun::before, #sun::after, #moon::before { animation: none; }
+      .sky, :root, #about, #about:popover-open { transition: none; }
     }
   </style>
 </head>
@@ -364,14 +496,24 @@
   <div id="sun" class="sky" aria-hidden="true"></div>
   <div id="moon" class="sky" aria-hidden="true"></div>
   <div id="stage"></div>
-  <button id="info" type="button" aria-label="About this page" aria-expanded="false" aria-controls="about">i</button>
+  <!-- popovertarget wires up open/close, aria-expanded, Esc and light
+       dismiss; focus returns to the i when the card closes. -->
+  <button id="info" type="button" aria-label="About this page" popovertarget="about">i</button>
   <div id="info-puff" aria-hidden="true"></div>
-  <div id="about" role="dialog" aria-label="About" tabindex="-1" hidden>
-    <button class="close" type="button" aria-label="Close">×</button>
+  <button id="rec" type="button" aria-label="Record a clip" data-state="idle" hidden>
+    <span class="dot" aria-hidden="true"></span>
+    <svg class="share" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M240-40q-33 0-56.5-23.5T160-120v-440q0-33 23.5-56.5T240-640h120v80H240v440h480v-440H600v-80h120q33 0 56.5 23.5T800-560v440q0 33-23.5 56.5T720-40H240Zm200-280v-447l-64 64-56-57 160-160 160 160-56 57-64-64v447h-80Z"/></svg>
+    <svg class="download" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
+    <span class="time" aria-hidden="true"></span>
+  </button>
+  <div id="rec-puff" aria-hidden="true" hidden></div>
+  <div id="about" popover role="dialog" aria-label="About" tabindex="-1">
+    <button class="close" type="button" aria-label="Close" popovertarget="about" popovertargetaction="hide">×</button>
     <h2 aria-label="Hello!"><span>H</span><span>e</span><span>l</span><span>l</span><span>o</span><span>!</span><span>🎈</span></h2>
     <p class="intro">I'm Luke. I write code and make&nbsp;noise.</p>
     <ul>
-      <li>Tap a letter to make a sound, drag to bend, shake to wobble, hold it down to blow it up. Tap the little balloon to swap sets.</li>
+      <li>Tap a letter to make a sound, drag to bend, shake to wobble, hold it down to blow it up. Tap the little balloon to swap sets, and the red dot to record a clip.</li>
+      <li class="keys">Or play your keyboard: rows <kbd>1</kbd>–<kbd>8</kbd>, <kbd>Q</kbd>–<kbd>I</kbd>, <kbd>A</kbd>–<kbd>K</kbd> and <kbd>Z</kbd>–<kbd>,</kbd> are L, U, K and E, low to high. Got a MIDI keyboard? <button class="midi" type="button">Plug it in</button><select class="midi-pick" aria-label="MIDI input" hidden></select></li>
       <li>Built with <a href="https://flutter.dev" target="_blank" rel="noopener">Flutter</a> web. Sounds synthesized in <a href="https://faust.grame.fr" target="_blank" rel="noopener">Faust</a>, compiled to Wasm.</li>
     </ul>
     <p class="links">
@@ -400,23 +542,138 @@
     document.getElementById('sky-toggle').addEventListener('click', () => balloonTheme.toggle());
   </script>
   <script>
+    // Move focus into the card when it opens so screen readers land on it.
+    document.getElementById('about').addEventListener('toggle', (e) => {
+      if (e.newState === 'open') e.target.focus({ preventScroll: true });
+    });
+  </script>
+  <script src="balloon_input.js"></script>
+  <script>
+    // Record button and the MIDI link in the card. Recording itself is in
+    // web/balloon_audio.js; keyboard and MIDI in web/balloon_input.js.
     (() => {
-      const btn = document.getElementById('info');
-      const card = document.getElementById('about');
-      const show = (open) => {
-        card.hidden = !open;
-        btn.setAttribute('aria-expanded', String(open));
-        // Move focus into the dialog so screen readers land on it.
-        if (open) card.focus({ preventScroll: true });
+      const btn = document.getElementById('rec');
+      const puff = document.getElementById('rec-puff');
+      const time = btn.querySelector('.time');
+      const LABELS = {
+        idle: 'Record a clip', rec: 'Stop recording', busy: 'Saving clip',
+        share: 'Share your clip', download: 'Download your clip',
       };
-      btn.addEventListener('click', () => show(card.hidden));
-      card.querySelector('.close').addEventListener('click', () => { show(false); btn.focus(); });
-      document.addEventListener('pointerdown', (e) => {
-        if (!card.hidden && !card.contains(e.target) && !btn.contains(e.target)) show(false);
-      }, true);
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !card.hidden) { show(false); btn.focus(); }
+      // Set once a share fails (some desktop browsers say they can share
+      // files, then refuse): from then on clips are offered as downloads.
+      let shareBroken = false;
+      const canShareFile = (file) => !shareBroken && !!navigator.canShare?.({ files: [file] });
+      let state = 'idle', clip = null, started = 0, timer = 0;
+      const set = (s) => {
+        state = s;
+        btn.dataset.state = s;
+        btn.setAttribute('aria-label', LABELS[s]);
+      };
+      // balloon_audio.js is a module: it has run by the time load fires.
+      addEventListener('load', () => {
+        if (window.balloonAudio?.canRecord()) btn.hidden = puff.hidden = false;
       });
+
+      const download = (file) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      };
+      // Offer the clip on the button: share where the browser can share
+      // files, else download. Sending it waits for that tap, so the share
+      // sheet always has the user gesture it needs.
+      const offer = (file) => {
+        clip = file;
+        const share = canShareFile(file);
+        console.info(`[rec] clip ${file.name} ${file.type} ${(file.size / 1024).toFixed(0)} KB; offering ${share ? 'share' : 'download'}`);
+        set(share ? 'share' : 'download');
+      };
+      const deliver = async (file) => {
+        if (state === 'share') {
+          set('busy'); // ignore taps while the share sheet is up
+          try {
+            await navigator.share({ files: [file], title: 'Balloons' });
+            console.info('[rec] shared');
+            return set('idle');
+          } catch (err) {
+            console.warn(`[rec] share failed: ${err.name}: ${err.message}`);
+            if (err.name === 'AbortError') return set('idle'); // closed the sheet
+            shareBroken = true;
+          }
+        }
+        console.info('[rec] downloading');
+        download(file);
+        set('idle');
+      };
+      const finish = async () => {
+        clearInterval(timer);
+        time.textContent = '';
+        set('busy');
+        const file = await balloonAudio.stopRecording();
+        if (!file) console.warn('[rec] stopped with an empty clip');
+        file ? offer(file) : set('idle');
+      };
+      const update = () => {
+        if (!balloonAudio.isRecording()) return finish(); // stopped itself at 60 s
+        const s = Math.floor((performance.now() - started) / 1000);
+        time.textContent = `0:${String(s).padStart(2, '0')}`;
+      };
+      btn.addEventListener('click', () => {
+        console.info(`[rec] tap in state ${state}`);
+        if (!window.balloonAudio || state === 'busy') return;
+        if ((state === 'share' || state === 'download') && clip) {
+          const file = clip;
+          clip = null;
+          return deliver(file);
+        }
+        if (state === 'rec') return finish();
+        if (!balloonAudio.startRecording()) {
+          console.warn('[rec] startRecording refused');
+        } else {
+          started = performance.now();
+          set('rec');
+          update();
+          timer = setInterval(update, 250);
+        }
+      });
+
+      const midi = document.querySelector('#about .midi');
+      const pick = document.querySelector('#about .midi-pick');
+      // Once connected, the link shows what's plugged in, and keeps up as
+      // keyboards come and go. With more than one, it turns into a picker.
+      const showDevices = (names) => {
+        midi.disabled = true;
+        if (names.length < 2) {
+          midi.hidden = false;
+          pick.hidden = true;
+          midi.textContent = names.length ? `🎹 ${names[0]}` : 'Connected: plug one in';
+          midi.title = names.length ? 'Connected' : '';
+          return;
+        }
+        const current = names.includes(balloonInput.midiSelected()) ? balloonInput.midiSelected() : '';
+        pick.replaceChildren(
+          new Option('🎹 All inputs', ''),
+          ...names.map((n) => new Option(`🎹 ${n}`, n)),
+        );
+        pick.value = current;
+        midi.hidden = true;
+        pick.hidden = false;
+      };
+      pick.addEventListener('change', () => {
+        balloonInput.selectMidi(pick.value);
+        pick.blur(); // keys typed into a focused select don't play
+      });
+      const showMidi = (result) => {
+        if (result === 'connected') return showDevices(balloonInput.midiDevices());
+        const text = { unsupported: 'Not in this browser', denied: 'Not allowed' }[result];
+        if (text) midi.textContent = text;
+      };
+      midi.addEventListener('click', () => balloonInput.connectMidi().then(showMidi));
+      balloonInput.onMidiDevices(showDevices); // also fires on the silent reconnect
     })();
   </script>
   <script type="module" src="balloon_audio.js"></script>
