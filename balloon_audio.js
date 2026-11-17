@@ -10,9 +10,10 @@
 //
 // The DSP is compiled ahead of time (npm run build:dsp). Here we only fetch
 // the precompiled wasm + metadata and the small faustwasm runtime, never the
-// Faust compiler. Nothing touches audio until the first user gesture.
+// Faust compiler. Voices are built into a suspended context at load; the
+// first user gesture only resumes it.
 
-// Both sets are loaded; the balloon button in the corner (Dart side) picks
+// Both sets are loaded; the balloon button in the footer (Dart side) picks
 // which one the letters play. The wild set is dsp/*_wild.dsp.
 const LETTERS = ['l', 'u', 'k', 'e'];
 const VOICES = [...LETTERS, ...LETTERS.map((v) => `${v}_wild`)];
@@ -106,23 +107,30 @@ async function createVoiceNode(Generator, voiceIndex, dsp) {
 
 async function loadVoices() {
   const { FaustMonoDspGenerator, dsps } = await prefetch();
-  await Promise.all(
-    [...dsps].map(([i, dsp]) =>
-      createVoiceNode(FaustMonoDspGenerator, i, dsp).catch((err) =>
-        console.error(`[balloonAudio] voice ${dsp.voice} failed`, err),
-      ),
-    ),
-  );
+  // One at a time: WebKit (Safari, every iOS browser) deadlocks the page
+  // when several audioWorklet.addModule calls are in flight at once.
+  // Serially all eight take ~100 ms. Classic set first.
+  for (const [i, dsp] of dsps) {
+    try {
+      await createVoiceNode(FaustMonoDspGenerator, i, dsp);
+    } catch (err) {
+      console.error(`[balloonAudio] voice ${dsp.voice} failed`, err);
+    }
+  }
   console.info(`[balloonAudio] ready: ${[...nodes.keys()].map((i) => VOICES[i]).join(', ')} @ ${ctx.sampleRate} Hz`);
   return nodes.size > 0;
 }
 
 // ---------------------------------------------------------------- unlock
 
-// Must run synchronously inside a user-gesture handler (Safari).
-function unlock() {
+// Builds the graph. Fine without a gesture: the context just starts
+// suspended, and voices can be loaded into it ahead of the first tap.
+function ensureContext() {
   if (!AudioContextClass) return false;
   if (!ctx || ctx.state === 'closed') {
+    loading = null; // nodes belong to the old context
+    nodes.clear();
+    paramPaths.clear();
     ctx = new AudioContextClass({ latencyHint: 'interactive' });
     master = ctx.createGain();
     master.gain.value = 0.7;
@@ -140,6 +148,23 @@ function unlock() {
     limiter.connect(ctx.destination);
     limiter.connect(analyser);
   }
+  return true;
+}
+
+function startLoading() {
+  if (!loading) {
+    loading = loadVoices().catch((err) => {
+      console.error('[balloonAudio] init failed', err);
+      loading = null;
+      return false;
+    });
+  }
+  return loading;
+}
+
+// Must run synchronously inside a user-gesture handler (Safari).
+function unlock() {
+  if (!ensureContext()) return false;
   // iOS: play through the ringer/silent switch, like a media app.
   try {
     if (navigator.audioSession) navigator.audioSession.type = 'playback';
@@ -171,14 +196,7 @@ GESTURES.forEach((t) => document.addEventListener(t, onGesture, { capture: true,
 
 function init() {
   if (!unlock()) return Promise.resolve(false);
-  if (!loading) {
-    loading = loadVoices().catch((err) => {
-      console.error('[balloonAudio] init failed', err);
-      loading = null;
-      return false;
-    });
-  }
-  return loading;
+  return startLoading();
 }
 
 function setParam(voice, name, value) {
@@ -228,9 +246,12 @@ if (new URLSearchParams(location.search).has('debug')) {
   }, 150);
 }
 
-// Warm the cache once the page is idle, so the first press sounds quickly.
-// This only downloads and compiles; the AudioContext waits for a gesture.
+// Once the page is idle, download the voices and build them into a suspended
+// AudioContext, so the first tap only has to resume it (instant) instead of
+// doing all the setup while the finger is down.
 window.addEventListener('load', () => {
-  const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1200));
-  idle(() => prefetch(), { timeout: 3000 });
+  const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 300));
+  idle(() => {
+    if (ensureContext()) startLoading();
+  }, { timeout: 1500 });
 });

@@ -27,10 +27,196 @@
       touch-action: none; /* no page scroll or pinch-zoom while playing */
       -webkit-tap-highlight-color: transparent;
     }
+
+    /* Static stand-in for the Flutter cloud footer (lib/paint/footer_painter.dart
+       at t = 0), shown while the engine loads; removed on Flutter's first frame.
+       KEEP IN SYNC with Dart: the 110px height (BalloonStage.footerHeight),
+       H and the two row() calls below (FooterPainter.paint), and the colors
+       --cloud-back / --cloud (FooterPainter._back / frontColor). */
+    #footer-placeholder {
+      position: fixed; left: 0; right: 0; bottom: 0; height: 110px;
+      pointer-events: none; overflow: hidden;
+      --cloud-back: #ffe6cc;
+    }
+    @media (prefers-color-scheme: dark) { #footer-placeholder { --cloud-back: #15120f; } }
+    #footer-placeholder svg { display: block; width: 100%; height: 100%; }
+
+    /* Info button + card, over the footer's left slot (the footer itself is
+       Flutter: lib/stage.dart, footerHeight 110). */
+    /* Letter colors (lib/paint/letter_shapes.dart), for the cute bits. */
+    :root { --l: #3D7BFF; --u: #26C6DA; --k: #43A047; --e: #FF9800; --card: #fffaf3; --cloud: #ffffff; }
+    @media (prefers-color-scheme: dark) { :root { --card: #1c1714; --cloud: #221d19; } }
+    #info {
+      position: fixed; z-index: 2;
+      left: calc(env(safe-area-inset-left) + 16px);
+      bottom: calc(env(safe-area-inset-bottom) + 32px);
+      width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255,255,255,.85) 0 12%, rgba(255,255,255,0) 42%),
+        conic-gradient(from 20deg, var(--l), var(--u), var(--k), var(--e), var(--l));
+      box-shadow: 0 3px 8px rgba(0,0,0,.18), inset 0 -3px 6px rgba(0,0,0,.15);
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+      font: italic 700 18px/1 Georgia, "Times New Roman", serif;
+      cursor: pointer; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      animation: bob 3s ease-in-out infinite;
+      transition: transform .2s cubic-bezier(.3, 1.6, .5, 1);
+    }
+    #info:hover { animation-play-state: paused; transform: scale(1.12) rotate(-8deg); }
+    #info:active { transform: scale(.88); }
+    #info[aria-expanded="true"] { animation: none; transform: scale(1.05); }
+    #info:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
+
+    /* A puff of front cloud (FooterPainter.frontColor) in front of the i, so it
+       peeks out of the clouds like the swap balloon. */
+    #info-puff {
+      position: fixed; z-index: 3; pointer-events: none;
+      left: calc(env(safe-area-inset-left) + 6px);
+      bottom: calc(env(safe-area-inset-bottom) + 8px);
+      width: 56px; height: 20px; border-radius: 10px; background: var(--cloud);
+    }
+    #info-puff::before, #info-puff::after {
+      content: ""; position: absolute; border-radius: 50%; background: var(--cloud);
+    }
+    #info-puff::before { width: 24px; height: 24px; left: 4px; top: -12px; }
+    #info-puff::after { width: 26px; height: 26px; right: 2px; top: -13px; }
+    #about {
+      position: fixed; z-index: 3;
+      left: calc(env(safe-area-inset-left) + 10px);
+      bottom: calc(env(safe-area-inset-bottom) + 82px);
+      box-sizing: border-box; width: min(290px, calc(100vw - 20px));
+      padding: 16px 18px 14px; border-radius: 26px;
+      /* candy-stripe border via two backgrounds */
+      border: 3px solid transparent;
+      background:
+        linear-gradient(var(--card), var(--card)) padding-box,
+        linear-gradient(120deg, var(--l), var(--u), var(--k), var(--e)) border-box;
+      color: var(--ink);
+      box-shadow: 0 10px 30px rgba(0,0,0,.18);
+      font: 14.5px/1.5 ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", system-ui, sans-serif;
+      -webkit-user-select: text; user-select: text; touch-action: auto;
+      transform-origin: 24px calc(100% + 20px);
+      animation: pop-in .45s cubic-bezier(.2, 1.5, .4, 1);
+    }
+    /* speech-bubble tail pointing at the i */
+    #about::after {
+      content: ""; position: absolute; left: 18px; bottom: -11px;
+      width: 16px; height: 16px; transform: rotate(45deg);
+      background: var(--card);
+      border-right: 3px solid var(--k); border-bottom: 3px solid var(--k);
+      border-bottom-right-radius: 5px;
+    }
+    #about[hidden] { display: none; }
+    #about:focus { outline: none; } /* focused programmatically on open */
+    #about h2 {
+      margin: 0 0 8px; font-size: 18px; font-weight: 800; letter-spacing: .5px;
+    }
+    #about h2 span { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; }
+    #about h2 span:nth-child(1) { color: var(--l); }
+    #about h2 span:nth-child(2) { color: var(--u); animation-delay: .15s; }
+    #about h2 span:nth-child(3) { color: var(--k); animation-delay: .3s; }
+    #about h2 span:nth-child(4) { color: var(--e); animation-delay: .45s; }
+    #about ul { list-style: none; margin: 0; padding: 0; }
+    #about li { position: relative; padding-left: 20px; margin: 0 0 7px; }
+    /* tiny balloon bullets */
+    #about li::before {
+      content: ""; position: absolute; left: 2px; top: .38em;
+      width: 10px; height: 12px; border-radius: 50% 50% 50% 50% / 55% 55% 45% 45%;
+      background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.8) 0 15%, transparent 45%), var(--c);
+    }
+    #about li:nth-child(1) { --c: var(--l); }
+    #about li:nth-child(2) { --c: var(--k); }
+    #about .links { margin: 12px 0 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    #about .links a {
+      padding: 5px 12px; border-radius: 999px; text-decoration: none;
+      font-weight: 700; font-size: 13.5px; color: #fff;
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,.15);
+      transition: transform .2s cubic-bezier(.3, 1.6, .5, 1);
+    }
+    #about .links a:nth-child(1) { background: #8E44E8; }
+    #about .links a:nth-child(2) { background: var(--l); }
+    #about .links a:nth-child(3) { background: linear-gradient(120deg, #E53935, var(--e)); }
+    #about .links a:hover { transform: translateY(-2px) rotate(-3deg); }
+    #about .close {
+      position: absolute; top: 8px; right: 10px;
+      width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
+      background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink);
+      font: 700 16px/1 system-ui, sans-serif; cursor: pointer;
+    }
+    #about .close:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
+
+    @keyframes pop-in {
+      0% { opacity: 0; transform: translateY(18px) scale(.3); }
+      60% { opacity: 1; }
+      100% { transform: none; }
+    }
+    @keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+    @keyframes wiggle { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-3px) rotate(-6deg); } 90% { transform: translateY(0) rotate(4deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      #info, #about, #about h2 span { animation: none; }
+    }
   </style>
 </head>
 <body>
+  <div id="footer-placeholder" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <script>
+    // Same rows as FooterPainter._cloudRow with drift 0: a rect from `base`
+    // down, plus a bump every `spacing` px whose size cycles through 5 steps.
+    (() => {
+      const box = document.getElementById('footer-placeholder');
+      const svg = box.querySelector('svg');
+      const H = 110, W = Math.max(screen.width, screen.height, innerWidth) + 100;
+      const row = (base, radius, spacing, seed, fill) => {
+        let d = `M0 ${base}H${W}V${H}H0Z`;
+        for (let i = 0, x = -spacing; x < W + spacing; i++, x += spacing) {
+          const r = radius * (0.8 + 0.1 * ((i + seed) % 5)), cy = base + r * 0.25;
+          d += `M${x - r} ${cy}a${r} ${r} 0 1 1 ${2 * r} 0a${r} ${r} 0 1 1 ${-2 * r} 0Z`;
+        }
+        return `<path fill="${fill}" d="${d}"/>`;
+      };
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      svg.setAttribute('preserveAspectRatio', 'xMinYMax slice');
+      svg.style.width = W + 'px';
+      svg.innerHTML = row(H - 44, 26, 46, 0, 'var(--cloud-back)') + row(H - 30, 20, 34, 3, 'var(--cloud)');
+      addEventListener('flutter-first-frame', () => box.remove(), { once: true });
+    })();
+  </script>
   <div id="stage"></div>
+  <button id="info" type="button" aria-label="About this page" aria-expanded="false" aria-controls="about">i</button>
+  <div id="info-puff" aria-hidden="true"></div>
+  <div id="about" role="dialog" aria-label="About" tabindex="-1" hidden>
+    <button class="close" type="button" aria-label="Close">×</button>
+    <h2 aria-label="hi!"><span>h</span><span>i</span><span>!</span><span>🎈</span></h2>
+    <ul>
+      <li>Hold a letter to blow it up, drag to bend, shake to wobble. Tap the little balloon to swap sets.</li>
+      <li>Letters drawn with Flutter web. Every squeak is Faust, compiled to WebAssembly.</li>
+    </ul>
+    <p class="links">
+      <a href="https://github.com/lukemorse" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://www.linkedin.com/in/luke-morse-4a759424/" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="mailto:luke.morse@gmail.com">Say hi</a>
+    </p>
+  </div>
+  <script>
+    (() => {
+      const btn = document.getElementById('info');
+      const card = document.getElementById('about');
+      const show = (open) => {
+        card.hidden = !open;
+        btn.setAttribute('aria-expanded', String(open));
+        // Move focus into the dialog so screen readers land on it.
+        if (open) card.focus({ preventScroll: true });
+      };
+      btn.addEventListener('click', () => show(card.hidden));
+      card.querySelector('.close').addEventListener('click', () => { show(false); btn.focus(); });
+      document.addEventListener('pointerdown', (e) => {
+        if (!card.hidden && !card.contains(e.target) && !btn.contains(e.target)) show(false);
+      }, true);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !card.hidden) { show(false); btn.focus(); }
+      });
+    })();
+  </script>
   <script type="module" src="balloon_audio.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
