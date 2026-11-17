@@ -8,19 +8,127 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Luke Morse: balloon letters you can play">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff4e6">
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000000">
+  <meta name="theme-color" content="#c2e0ff">
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/Icon-180.png">
   <title>Luke Morse</title>
 
+  <script>
+    // Light/dark theme: the system's by default; tapping the sun/moon flips
+    // it. A choice that differs from the system is remembered; flipping back
+    // to match the system forgets it (so it follows the system again).
+    // Sets <html data-theme> before first paint; Flutter reads it through
+    // window.balloonTheme (lib/audio/js_bridge.dart).
+    (() => {
+      const KEY = 'theme', mq = matchMedia('(prefers-color-scheme: dark)');
+      const system = () => (mq.matches ? 'dark' : 'light');
+      let saved = null;
+      try { saved = localStorage.getItem(KEY); } catch {}
+      if (saved !== 'dark' && saved !== 'light') saved = null;
+      const current = () => saved || system();
+      const listeners = [];
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+      const apply = () => {
+        const t = current();
+        document.documentElement.dataset.theme = t;
+        document.querySelector('meta[name="theme-color"]')
+          ?.setAttribute('content', t === 'dark' ? '#000000' : '#c2e0ff');
+        document.getElementById('sky-toggle')
+          ?.setAttribute('aria-label', t === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        for (const f of listeners) f(t === 'dark', !reduce.matches);
+      };
+      mq.addEventListener?.('change', () => { if (!saved) apply(); });
+      window.balloonTheme = {
+        isDark: () => current() === 'dark',
+        onChange: (f) => { listeners.push(f); },
+        toggle: () => {
+          const next = current() === 'dark' ? 'light' : 'dark';
+          saved = next === system() ? null : next;
+          try { saved ? localStorage.setItem(KEY, saved) : localStorage.removeItem(KEY); } catch {}
+          apply();
+        },
+        apply,
+      };
+      apply();
+    })();
+  </script>
+
   <style>
-    :root { --bg: #fff4e6; --ink: #3a2f2a; color-scheme: light dark; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg: #000000; --ink: #f2e8dc; }
-    }
+    /* Theme comes from <html data-theme>, set by the script above. The colors
+       are registered so they can fade when it flips; KEEP IN SYNC with
+       Night.duration / Night.curve (lib/night.dart), which fades the Flutter
+       side (clouds, strings) alongside. */
+    @property --bg { syntax: "<color>"; inherits: true; initial-value: #c2e0ff; }
+    @property --ink { syntax: "<color>"; inherits: true; initial-value: #3a2f2a; }
+    @property --card { syntax: "<color>"; inherits: true; initial-value: #fffaf3; }
+    @property --cloud { syntax: "<color>"; inherits: true; initial-value: #ffffff; }
+    :root { transition: --bg .6s ease, --ink .6s ease, --card .6s ease, --cloud .6s ease; }
+    :root { --bg: #c2e0ff; --ink: #3a2f2a; color-scheme: light; }
+    :root[data-theme="dark"] { --bg: #000000; --ink: #f2e8dc; color-scheme: dark; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+
+    /* Subtle sun (light) or moon (dark) tucked into the top-right corner
+       (centred on it, so only its lower-left quarter shows), behind the
+       (transparent) Flutter canvas. They cross-fade and slide into the
+       corner when the theme flips. Sun rays: a conic stripe pattern faded out
+       radially, slowly turning; the disc and glow breathe a little. */
+    .sky {
+      position: fixed; z-index: 0; pointer-events: none;
+      top: calc(env(safe-area-inset-top) - 110px); right: calc(env(safe-area-inset-right) - 110px);
+      width: 220px; height: 220px;
+      transition: opacity .6s ease, transform .6s cubic-bezier(.3, 1.4, .5, 1), scale .25s cubic-bezier(.3, 1.6, .5, 1);
+    }
+    :root[data-theme="dark"] #sun, :root:not([data-theme="dark"]) #moon {
+      opacity: 0; transform: translate(40px, -40px);
+    }
+    /* Tap target over the visible quarter of the disc, above the Flutter
+       canvas (which would otherwise take the tap). */
+    #sky-toggle {
+      position: fixed; z-index: 2;
+      top: calc(env(safe-area-inset-top) - 50px); right: calc(env(safe-area-inset-right) - 50px);
+      width: 100px; height: 100px; padding: 0; border: 0; border-radius: 50%;
+      background: transparent; cursor: pointer;
+      touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    }
+    #sky-toggle:focus-visible { outline: 2px dashed var(--ink); outline-offset: -8px; }
+    #sky-toggle:hover ~ .sky { scale: 1.08; }
+    #sky-toggle:active ~ .sky { scale: .94; }
+    #sun::before, #sun::after { content: ""; position: absolute; inset: 0; border-radius: 50%; }
+    #sun::before {
+      background: repeating-conic-gradient(from 0deg,
+        rgba(255, 244, 190, .3) 0deg 6deg, rgba(255, 244, 190, 0) 8deg 30deg);
+      -webkit-mask: radial-gradient(circle, transparent 0 40px, #000 46px, rgba(0,0,0,.4) 75px, transparent 110px);
+      mask: radial-gradient(circle, transparent 0 40px, #000 46px, rgba(0,0,0,.4) 75px, transparent 110px);
+      animation: sun-spin 90s linear infinite;
+    }
+    #sun::after {
+      background: radial-gradient(circle,
+        rgba(255, 251, 232, .75) 0 36px, rgba(255, 238, 170, .25) 38px, rgba(255, 238, 170, .08) 60px, rgba(255, 238, 170, 0) 95px);
+      animation: sun-breathe 6s ease-in-out infinite;
+    }
+    @keyframes sun-spin { to { transform: rotate(360deg); } }
+    @keyframes sun-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+    /* Moon: a pale disc (radius 36, same as the sun's) with a few craters in
+       its visible lower-left quarter, shaded along that edge, and a soft halo
+       that breathes. */
+    #moon::before, #moon::after { content: ""; position: absolute; border-radius: 50%; }
+    #moon::before {
+      inset: 0;
+      background: radial-gradient(circle,
+        rgba(236, 231, 214, 0) 0 34px, rgba(236, 231, 214, .14) 37px, rgba(236, 231, 214, .05) 60px, rgba(236, 231, 214, 0) 95px);
+      animation: sun-breathe 6s ease-in-out infinite;
+    }
+    #moon::after {
+      inset: 74px; /* 220/2 - 36 */
+      background:
+        radial-gradient(circle at 15px 49px, rgba(150, 142, 122, .5) 0 6px, rgba(150, 142, 122, 0) 7px),
+        radial-gradient(circle at 28px 62px, rgba(150, 142, 122, .45) 0 3.5px, rgba(150, 142, 122, 0) 4.5px),
+        radial-gradient(circle at 27px 44px, rgba(150, 142, 122, .4) 0 2.5px, rgba(150, 142, 122, 0) 3.5px),
+        radial-gradient(circle at 8px 60px, rgba(150, 142, 122, .35) 0 2px, rgba(150, 142, 122, 0) 3px),
+        rgba(236, 231, 214, .82);
+      box-shadow: inset 7px -7px 12px -4px rgba(0, 0, 0, .35), 0 0 14px rgba(236, 231, 214, .25);
+    }
     body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
     #stage {
       position: fixed; inset: 0;
@@ -36,16 +144,16 @@
     #footer-placeholder {
       position: fixed; left: 0; right: 0; bottom: 0; height: 110px;
       pointer-events: none; overflow: hidden;
-      --cloud-back: #ffe6cc;
+      --cloud-back: #eaf5ff;
     }
-    @media (prefers-color-scheme: dark) { #footer-placeholder { --cloud-back: #15120f; } }
+    :root[data-theme="dark"] #footer-placeholder { --cloud-back: #15120f; }
     #footer-placeholder svg { display: block; width: 100%; height: 100%; }
 
     /* Info button + card, over the footer's left slot (the footer itself is
        Flutter: lib/stage.dart, footerHeight 110). */
     /* Letter colors (lib/paint/letter_shapes.dart), for the cute bits. */
     :root { --l: #3D7BFF; --u: #26C6DA; --k: #43A047; --e: #FF9800; --card: #fffaf3; --cloud: #ffffff; }
-    @media (prefers-color-scheme: dark) { :root { --card: #1c1714; --cloud: #221d19; } }
+    :root[data-theme="dark"] { --card: #1c1714; --cloud: #221d19; }
     #info {
       position: fixed; z-index: 2;
       left: calc(env(safe-area-inset-left) + 16px);
@@ -112,10 +220,16 @@
       margin: 0 0 8px; font-size: 18px; font-weight: 800; letter-spacing: .5px;
     }
     #about h2 span { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; }
-    #about h2 span:nth-child(1) { color: var(--l); }
-    #about h2 span:nth-child(2) { color: var(--u); animation-delay: .15s; }
-    #about h2 span:nth-child(3) { color: var(--k); animation-delay: .3s; }
-    #about h2 span:nth-child(4) { color: var(--e); animation-delay: .45s; }
+    #about h2 span:nth-child(4n+1) { color: var(--l); }
+    #about h2 span:nth-child(4n+2) { color: var(--u); }
+    #about h2 span:nth-child(4n+3) { color: var(--k); }
+    #about h2 span:nth-child(4n)   { color: var(--e); }
+    #about h2 span:nth-child(2) { animation-delay: .15s; }
+    #about h2 span:nth-child(3) { animation-delay: .3s; }
+    #about h2 span:nth-child(4) { animation-delay: .45s; }
+    #about h2 span:nth-child(5) { animation-delay: .6s; }
+    #about h2 span:nth-child(6) { animation-delay: .75s; }
+    #about h2 span:nth-child(7) { animation-delay: .9s; }
     #about ul { list-style: none; margin: 0; padding: 0; }
     #about li { position: relative; padding-left: 20px; margin: 0 0 7px; }
     /* tiny balloon bullets */
@@ -126,6 +240,12 @@
     }
     #about li:nth-child(1) { --c: var(--l); }
     #about li:nth-child(2) { --c: var(--k); }
+    /* inline links: ink text, underline in the bullet's balloon color */
+    #about li a {
+      color: inherit; font-weight: 700;
+      text-decoration: underline 2px var(--c); text-underline-offset: 3px;
+    }
+    #about li a:hover { color: var(--c); }
     #about .links { margin: 12px 0 0; display: flex; gap: 8px; flex-wrap: wrap; }
     #about .links a {
       padding: 5px 12px; border-radius: 999px; text-decoration: none;
@@ -153,7 +273,8 @@
     @keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
     @keyframes wiggle { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(-3px) rotate(-6deg); } 90% { transform: translateY(0) rotate(4deg); } }
     @media (prefers-reduced-motion: reduce) {
-      #info, #about, #about h2 span { animation: none; }
+      #info, #about, #about h2 span, #sun::before, #sun::after, #moon::before { animation: none; }
+      .sky, :root { transition: none; }
     }
   </style>
 </head>
@@ -181,15 +302,18 @@
       addEventListener('flutter-first-frame', () => box.remove(), { once: true });
     })();
   </script>
+  <button id="sky-toggle" type="button" aria-label="Switch theme"></button>
+  <div id="sun" class="sky" aria-hidden="true"></div>
+  <div id="moon" class="sky" aria-hidden="true"></div>
   <div id="stage"></div>
   <button id="info" type="button" aria-label="About this page" aria-expanded="false" aria-controls="about">i</button>
   <div id="info-puff" aria-hidden="true"></div>
   <div id="about" role="dialog" aria-label="About" tabindex="-1" hidden>
     <button class="close" type="button" aria-label="Close">×</button>
-    <h2 aria-label="hi!"><span>h</span><span>i</span><span>!</span><span>🎈</span></h2>
+    <h2 aria-label="Hello!"><span>H</span><span>e</span><span>l</span><span>l</span><span>o</span><span>!</span><span>🎈</span></h2>
     <ul>
       <li>Hold a letter to blow it up, drag to bend, shake to wobble. Tap the little balloon to swap sets.</li>
-      <li>Letters drawn with Flutter web. Every squeak is Faust, compiled to WebAssembly.</li>
+      <li>Letters drawn with <a href="https://flutter.dev" target="_blank" rel="noopener">Flutter</a> web. Sounds synthesized in <a href="https://faust.grame.fr" target="_blank" rel="noopener">Faust</a>, compiled to Wasm.</li>
     </ul>
     <p class="links">
       <a href="https://github.com/lukemorse" target="_blank" rel="noopener">GitHub</a>
@@ -197,6 +321,10 @@
       <a href="mailto:luke.morse@gmail.com">Say hi</a>
     </p>
   </div>
+  <script>
+    balloonTheme.apply(); // now that #sky-toggle exists, give it its label
+    document.getElementById('sky-toggle').addEventListener('click', () => balloonTheme.toggle());
+  </script>
   <script>
     (() => {
       const btn = document.getElementById('info');
