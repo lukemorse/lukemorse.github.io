@@ -49,6 +49,8 @@
           apply();
         },
         apply,
+        // Which balloon set is showing (lib/stage.dart); picks the letter colors below.
+        setWild: (wild) => { document.documentElement.dataset.set = wild ? 'wild' : 'classic'; },
       };
       apply();
     })();
@@ -151,9 +153,44 @@
 
     /* Info button + card, over the footer's left slot (the footer itself is
        Flutter: lib/stage.dart, footerHeight 110). */
-    /* Letter colors (lib/paint/letter_shapes.dart), for the cute bits. */
-    :root { --l: #FF9800; --u: #26C6DA; --k: #43A047; --e: #3D7BFF; --card: #fffaf3; --cloud: #ffffff; }
-    :root[data-theme="dark"] { --card: #1c1714; --cloud: #221d19; }
+    /* Letter colors, for the cute bits: each letter's first gradient color,
+       per theme and set, the same one the footer and swap balloon use.
+       KEEP IN SYNC with BalloonPalette.day / .night (lib/paint/palette.dart).
+       <html data-set> comes from Flutter (balloonTheme.setWild). */
+    :root { --l: #E53935; --u: #3F51B5; --k: #43A047; --e: #3D7BFF; --card: #fffaf3; --cloud: #ffffff; }
+    :root[data-set="wild"] { --l: #00D9A6; --u: #7ED957; --k: #B04FFF; --e: #FF4FA3; }
+    :root[data-theme="dark"] { --l: #F0544F; --u: #6474D6; --k: #5DB861; --e: #5B8DFF; --card: #1c1714; --cloud: #221d19; }
+    :root[data-theme="dark"][data-set="wild"] { --l: #2ECDA5; --u: #86D06A; --k: #B672F5; --e: #F06AAE; }
+    /* Each letter's second gradient color (only L and E are used, for the
+       icon hovers). Same KEEP IN SYNC as above. */
+    :root { --l2: #FF9800; --e2: #8E44E8; }
+    :root[data-set="wild"] { --l2: #FFE03B; --e2: #FFC233; }
+    :root[data-theme="dark"] { --l2: #F5A23A; --e2: #A066F0; }
+    :root[data-theme="dark"][data-set="wild"] { --l2: #F2DA5C; --e2: #F2C35A; }
+    /* Text-safe versions (-t): the same hue with OKLCH lightness capped at
+       .52, which keeps at least 4.5:1 against the light card and against
+       white text on top. Without relative colors, fall back to the day ink. */
+    :root { --l-t: #3a2f2a; --u-t: #3a2f2a; --k-t: #3a2f2a; --e-t: #3a2f2a; --l2-t: #3a2f2a; --e2-t: #3a2f2a; }
+    @supports (color: oklch(from red l c h)) {
+      :root {
+        --l-t: oklch(from var(--l) min(l, .52) c h); --u-t: oklch(from var(--u) min(l, .52) c h);
+        --k-t: oklch(from var(--k) min(l, .52) c h); --e-t: oklch(from var(--e) min(l, .52) c h);
+        --l2-t: oklch(from var(--l2) min(l, .52) c h); --e2-t: oklch(from var(--e2) min(l, .52) c h);
+      }
+    }
+    /* Display versions (-d) for the big "Hello!": capped at .62 instead, about
+       3:1 (enough for big decorative letters) and less muddy than -t. */
+    :root { --l-d: var(--l-t); --u-d: var(--u-t); --k-d: var(--k-t); --e-d: var(--e-t); }
+    @supports (color: oklch(from red l c h)) {
+      :root:not([data-theme="dark"]) {
+        --l-d: oklch(from var(--l) min(l, .62) c h); --u-d: oklch(from var(--u) min(l, .62) c h);
+        --k-d: oklch(from var(--k) min(l, .62) c h); --e-d: oklch(from var(--e) min(l, .62) c h);
+      }
+    }
+    :root[data-theme="dark"] { --l-d: var(--l); --u-d: var(--u); --k-d: var(--k); --e-d: var(--e); }
+    /* Text on the dark card: the plain colors are already light enough. */
+    :root[data-theme="dark"] { --l-h: var(--l); --u-h: var(--u); --k-h: var(--k); --e-h: var(--e); }
+    :root:not([data-theme="dark"]) { --l-h: var(--l-t); --u-h: var(--u-t); --k-h: var(--k-t); --e-h: var(--e-t); }
     #info {
       position: fixed; z-index: 2;
       left: calc(env(safe-area-inset-left) + 16px);
@@ -192,7 +229,7 @@
       position: fixed; z-index: 3;
       left: calc(env(safe-area-inset-left) + 10px);
       bottom: calc(env(safe-area-inset-bottom) + 82px);
-      box-sizing: border-box; width: min(290px, calc(100vw - 20px));
+      box-sizing: border-box; width: min(310px, calc(100vw - 20px));
       padding: 16px 18px 14px; border-radius: 26px;
       /* candy-stripe border via two backgrounds */
       border: 3px solid transparent;
@@ -211,7 +248,8 @@
       content: ""; position: absolute; left: 18px; bottom: -11px;
       width: 16px; height: 16px; transform: rotate(45deg);
       background: var(--card);
-      border-right: 3px solid var(--k); border-bottom: 3px solid var(--k);
+      /* --u: what the 120deg border gradient is at this spot */
+      border-right: 3px solid var(--u); border-bottom: 3px solid var(--u);
       border-bottom-right-radius: 5px;
     }
     #about[hidden] { display: none; }
@@ -220,16 +258,17 @@
       margin: 0 0 8px; font-size: 18px; font-weight: 800; letter-spacing: .5px;
     }
     #about h2 span { display: inline-block; animation: wiggle 2.4s ease-in-out infinite; }
-    #about h2 span:nth-child(4n+1) { color: var(--l); }
-    #about h2 span:nth-child(4n+2) { color: var(--u); }
-    #about h2 span:nth-child(4n+3) { color: var(--k); }
-    #about h2 span:nth-child(4n)   { color: var(--e); }
+    #about h2 span:nth-child(4n+1) { color: var(--l-d); }
+    #about h2 span:nth-child(4n+2) { color: var(--u-d); }
+    #about h2 span:nth-child(4n+3) { color: var(--k-d); }
+    #about h2 span:nth-child(4n)   { color: var(--e-d); }
     #about h2 span:nth-child(2) { animation-delay: .15s; }
     #about h2 span:nth-child(3) { animation-delay: .3s; }
     #about h2 span:nth-child(4) { animation-delay: .45s; }
     #about h2 span:nth-child(5) { animation-delay: .6s; }
     #about h2 span:nth-child(6) { animation-delay: .75s; }
     #about h2 span:nth-child(7) { animation-delay: .9s; }
+    #about .intro { margin: 0 0 10px; }
     #about ul { list-style: none; margin: 0; padding: 0; }
     #about li { position: relative; padding-left: 20px; margin: 0 0 7px; }
     /* tiny balloon bullets */
@@ -238,25 +277,44 @@
       width: 10px; height: 12px; border-radius: 50% 50% 50% 50% / 55% 55% 45% 45%;
       background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.8) 0 15%, transparent 45%), var(--c);
     }
-    #about li:nth-child(1) { --c: var(--l); }
-    #about li:nth-child(2) { --c: var(--k); }
+    #about li:nth-child(1) { --c: var(--l); --c-h: var(--l-h); }
+    #about li:nth-child(2) { --c: var(--k); --c-h: var(--k-h); }
     /* inline links: ink text, underline in the bullet's balloon color */
     #about li a {
       color: inherit; font-weight: 700;
       text-decoration: underline 2px var(--c); text-underline-offset: 3px;
     }
-    #about li a:hover { color: var(--c); }
-    #about .links { margin: 12px 0 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    #about li a:hover { color: var(--c-h); }
+    /* Round icon buttons: quiet ink by default, filled with a balloon color
+       (text-safe, so the white icon keeps 4.5:1) on hover/focus. */
+    #about .links { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
     #about .links a {
-      padding: 5px 12px; border-radius: 999px; text-decoration: none;
-      font-weight: 700; font-size: 13.5px; color: #fff;
-      box-shadow: inset 0 -2px 0 rgba(0,0,0,.15);
-      transition: transform .2s cubic-bezier(.3, 1.6, .5, 1);
+      position: relative; -webkit-tap-highlight-color: transparent;
+      display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+      color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent);
+      transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .2s, color .2s;
     }
-    #about .links a:nth-child(1) { background: #8E44E8; }
-    #about .links a:nth-child(2) { background: var(--l); }
-    #about .links a:nth-child(3) { background: linear-gradient(120deg, #E53935, var(--e)); }
-    #about .links a:hover { transform: translateY(-2px) rotate(-3deg); }
+    #about .links svg { width: 18px; height: 18px; display: block; }
+    /* Material Symbols have built-in padding; size up to match the logos. */
+    #about .links svg.m { width: 22px; height: 22px; }
+    #about .links a:nth-child(1) { --c: var(--u-t); }  /* GitHub: indigo */
+    #about .links a:nth-child(2) { --c: var(--e-t); }  /* LinkedIn: blue */
+    #about .links a:nth-child(3) { --c: var(--l-t); }  /* email: red */
+    #about .links a:nth-child(4) { --c: var(--k-t); }  /* grass: green */
+    #about .links a:nth-child(5) { --c: var(--l2-t); } /* smoke: orange */
+    #about .links a:nth-child(6) { --c: var(--e2-t); } /* flower: purple */
+    /* Invisible 44x44 hit area (36 + 4px each side). With the 8px gap,
+       neighbors' areas meet but don't overlap, and rows stay apart too. */
+    #about .links a::after { content: ""; position: absolute; inset: -4px; }
+    /* Touch: brief color on press; skip :hover so it doesn't stick after a tap. */
+    @media (hover: none) {
+      #about .links a:hover:not(:focus-visible):not(:active) { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); transform: none; }
+    }
+    #about .links a:hover, #about .links a:focus-visible {
+      color: #fff; background: var(--c); transform: translateY(-2px) rotate(-6deg);
+    }
+    #about .links a:focus-visible { outline: 2px dashed var(--ink); outline-offset: 2px; }
+    #about .links a:active { color: #fff; background: var(--c); transform: scale(.9); }
     #about .close {
       position: absolute; top: 8px; right: 10px;
       width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
@@ -311,14 +369,30 @@
   <div id="about" role="dialog" aria-label="About" tabindex="-1" hidden>
     <button class="close" type="button" aria-label="Close">×</button>
     <h2 aria-label="Hello!"><span>H</span><span>e</span><span>l</span><span>l</span><span>o</span><span>!</span><span>🎈</span></h2>
+    <p class="intro">I'm Luke. I write code and make&nbsp;noise.</p>
     <ul>
-      <li>Hold a letter to blow it up, drag to bend, shake to wobble. Tap the little balloon to swap sets.</li>
-      <li>Letters drawn with <a href="https://flutter.dev" target="_blank" rel="noopener">Flutter</a> web. Sounds synthesized in <a href="https://faust.grame.fr" target="_blank" rel="noopener">Faust</a>, compiled to Wasm.</li>
+      <li>Tap a letter to make a sound, drag to bend, shake to wobble, hold it down to blow it up. Tap the little balloon to swap sets.</li>
+      <li>Built with <a href="https://flutter.dev" target="_blank" rel="noopener">Flutter</a> web. Sounds synthesized in <a href="https://faust.grame.fr" target="_blank" rel="noopener">Faust</a>, compiled to Wasm.</li>
     </ul>
     <p class="links">
-      <a href="https://github.com/lukemorse" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://www.linkedin.com/in/luke-morse-4a759424/" target="_blank" rel="noopener">LinkedIn</a>
-      <a href="mailto:luke.morse@gmail.com">Say hi</a>
+      <a href="https://github.com/lukemorse" target="_blank" rel="noopener" aria-label="GitHub" title="GitHub">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a href="https://www.linkedin.com/in/luke-morse-4a759424/" target="_blank" rel="noopener" aria-label="LinkedIn" title="LinkedIn">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9.5h4V21H3zM9.5 9.5h3.8v1.6h.06c.53-1 1.83-2.05 3.77-2.05 4.03 0 4.77 2.65 4.77 6.1V21h-4v-5.2c0-1.24-.02-2.84-1.73-2.84-1.73 0-2 1.35-2 2.75V21h-4z"/></svg>
+      </a>
+      <a href="mailto:luke.morse@gmail.com" aria-label="Email" title="Say hi">
+        <svg class="m" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M140-160q-24 0-42-18t-18-42v-520q0-24 18-42t42-18h680q24 0 42 18t18 42v520q0 24-18 42t-42 18H140Zm340-308q5 0 8.5-1.5t7.5-3.5l314-205q5-3 7.5-8t2.5-11q0-13-11.5-20.5t-23.5.5L480-522 176-717q-12-8-24-1t-12 20q0 6 3 11.5t7 8.5l314 205q4 2 7.5 3.5t8.5 1.5Z"/></svg>
+      </a>
+      <a href="https://newgrassrock.bandcamp.com/" target="_blank" rel="noopener" aria-label="New Grass Rock on Bandcamp" title="New Grass Rock">
+        <svg class="m" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M110-160q-13 0-21.5-8.5T80-190q0-13 8.5-21.5T110-220h210q-16-72-62-129.5T151-441q-23-13-20-26t29-13q134 0 227 93t93 227H110Zm430 0q0-42-8-73.5T512-296q40-88 120-136t168-48q26 0 29 13t-20 26q-63 35-109 93.5T640-220h210q13 0 21.5 8.5T880-190q0 13-8.5 21.5T850-160H540Zm-58-193q-14-128 51.5-223.5T704-705q25-8 33.5 4t-9.5 29q-38 36-67.5 82T621-494q-44 21-80 58.5T482-353Zm-61-76q-16-15-35-30t-32-23q3-12 4.5-26.5T360-532q0-55-13-106t-37-97q-13-23-1-31t33 8q45 34 77.5 81T468-573q-18 32-30.5 69.5T421-429Z"/></svg>
+      </a>
+      <a href="https://www.soundohm.com/product/a-harsh-smoker-s-sonic-co-1" target="_blank" rel="noopener" aria-label="A Harsh Smoker's Sonic Co. on Soundohm" title="A Harsh Smoker's Sonic Co.">
+        <svg class="m" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M130-200q-20.83 0-35.42-14.62Q80-229.24 80-250.12 80-271 94.58-285.5 109.17-300 130-300h535q10.83 0 17.92 7.1 7.08 7.09 7.08 17.95v50.1q0 10.85-7.08 17.85-7.09 7-17.92 7H130Zm629.88 0Q749-200 742-207.1q-7-7.09-7-17.95v-50.1q0-10.85 7.12-17.85 7.11-7 18-7 10.88 0 17.88 7.1 7 7.09 7 17.95v50.1q0 10.85-7.12 17.85-7.11 7-18 7Zm95 0Q844-200 837-207.1q-7-7.09-7-17.95v-50.1q0-10.85 7.12-17.85 7.11-7 18-7 10.88 0 17.88 7.1 7 7.09 7 17.95v50.1q0 10.85-7.12 17.85-7.11 7-18 7Zm-95-145Q749-345 742-352.08q-7-7.09-7-17.92v-31q0-42-24.5-66T651-491h-71q-54 0-90.5-41.5T453-628q0-54 36.5-90.5T580-755q10.83 0 17.92 7.12 7.08 7.11 7.08 18 0 10.88-7.08 17.88-7.09 7-17.92 7-35 0-56 21t-21 56q0 35 21 61t55.57 26H651q54.38 0 94.19 37Q785-467 785-413v43q0 10.83-7.12 17.92-7.11 7.08-18 7.08Zm95 0Q844-345 837-352.08q-7-7.09-7-17.92v-75q0-75-50-123t-125-48q-10.83 0-17.92-7.12-7.08-7.11-7.08-18 0-10.88 7.08-17.88 7.09-7 17.92-7 34 0 55.5-24t21.5-58q0-34-21.5-58T655-830q-10.83 0-17.92-7.12-7.08-7.11-7.08-18 0-10.88 7.08-17.88 7.09-7 17.92-7 54 0 90.5 39t36.5 93q0 33-12.5 57T737-650q58 20 100.5 75T880-445v75q0 10.83-7.12 17.92-7.11 7.08-18 7.08Z"/></svg>
+      </a>
+      <a href="https://lukemorse.bandcamp.com/album/spring-music" target="_blank" rel="noopener" aria-label="Spring Music on Bandcamp" title="Spring Music">
+        <svg class="m" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true"><path d="M480-570q34 0 57-24t23-56q0-34-23-57t-57-23q-32 0-56 23t-24 57q0 32 24 56t56 24Zm0 190q-36 0-65.5-21.5T371-458q-6 0-12.5.5t-12.5.5q-48 0-82-34t-34-82q0-20 8-39.5t23-37.5q-14-18-22-37.5t-8-39.5q0-48 33.5-82t81.5-34q6 0 12.5.5t12.5.5q14-35 43.5-56.5T480-920q36 0 65.5 21.5T589-842q6 0 12.5-.5t12.5-.5q48 0 81.5 34t33.5 82q0 20-7.5 39.5T699-650q14 18 22 37.5t8 39.5q0 48-33.5 82T614-457q-6 0-12.5-.5T589-458q-14 35-43.5 56.5T480-380Zm0 300q0-123 85.5-225T770-432q14-3 27.5-.5T820-419q10 11 12 24.5t-1 27.5q-26 118-128 202.5T480-80Zm0 0q0-123-85.5-225T190-432q-14-3-27.5-.5T140-419q-10 11-12 25t1 28q26 118 128 202t223 84Z"/></svg>
+      </a>
     </p>
   </div>
   <script>
