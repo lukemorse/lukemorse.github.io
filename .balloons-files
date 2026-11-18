@@ -18,6 +18,8 @@ dsp/l_wild/dsp-meta.json
 dsp/l_wild/dsp-module.wasm
 dsp/l/dsp-meta.json
 dsp/l/dsp-module.wasm
+dsp/swap/dsp-meta.json
+dsp/swap/dsp-module.wasm
 dsp/u_wild/dsp-meta.json
 dsp/u_wild/dsp-module.wasm
 dsp/u/dsp-meta.json

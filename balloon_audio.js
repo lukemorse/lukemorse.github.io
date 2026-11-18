@@ -3,7 +3,8 @@
 // Narrow API on window.balloonAudio (Dart reaches it via lib/audio/js_bridge.dart):
 //   init()                    -> Promise<boolean>  create/resume audio; call from a gesture
 //   setParam(voice, name, v)  set "inflate" | "bend" | "wobble" | "pop" | "gate"
-//                             voice 0..3 = L U K E classic, 4..7 = L U K E wild
+//                             voice 0..3 = L U K E classic, 4..7 = L U K E wild,
+//                             8 = swap balloon ("wild" 0/1, "boing" counter; dsp/swap.dsp)
 //   gate(voice, on)           shorthand for setParam(voice, "gate", 0|1)
 //   isRunning()               -> boolean  context running and voices loaded
 //   debugLevel()              -> number   output RMS, for checking that sound plays
@@ -22,7 +23,7 @@
 // Both sets are loaded; the balloon button in the footer (Dart side) picks
 // which one the letters play. The wild set is dsp/*_wild.dsp.
 const LETTERS = ['l', 'u', 'k', 'e'];
-const VOICES = [...LETTERS, ...LETTERS.map((v) => `${v}_wild`)];
+const VOICES = [...LETTERS, ...LETTERS.map((v) => `${v}_wild`), 'swap'];
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const asset = (p) => new URL(p, document.baseURI).href;
 
@@ -238,7 +239,9 @@ function debugLevel() {
 // A short buzz on pop. Android only; elsewhere vibrate is missing or a no-op.
 function buzz() {
   try {
-    navigator.vibrate?.(30);
+    // No amplitude control on the web, so "harder" = longer + a pattern:
+    // a sharp hit, a tiny gap, then a longer rumble.
+    navigator.vibrate?.([70, 30, 120]);
   } catch (_) {}
 }
 
