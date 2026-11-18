@@ -48,6 +48,8 @@ function reportIssue(message, level, extra) {
   console.warn(`[balloonAudio] ${message}`, extra);
   window.Sentry?.captureMessage(`[balloonAudio] ${message}`, {
     level,
+    // One issue per message; otherwise they all group by the shared frame.
+    fingerprint: ['balloonAudio', message],
     tags: { source: 'audio', state: extra.state, fromBackground: String(extra.fromBackground) },
     extra,
   });
@@ -233,13 +235,14 @@ GESTURES.forEach((t) => document.addEventListener(t, onGesture, { capture: true,
 
 // iOS WebKit sometimes never lets a context out of 'interrupted' once another
 // app has had the audio session. If a gesture's resume() has not taken after
-// a moment, throw the context away and build a fresh one (voices reload from
+// REVIVE_WAIT_MS (a fresh context can take ~1 s to start on some iPhones), throw the context away and build a fresh one (voices reload from
 // the compiled cache in ~100 ms); the next tap starts it.
 //
 // Each run of taps that cannot get audio going is one "episode": reported to
 // Sentry once when it starts, and once more when it ends (recovered by a
 // rebuild) or gives up after MAX_REBUILDS.
 const MAX_REBUILDS = 3;
+const REVIVE_WAIT_MS = 1500;
 let reviveTimer = 0;
 let episode = null; // { start, rebuilds, state, fromBackground, gaveUp }
 let lastShownAt = 0; // when the page last came back from the background
@@ -285,7 +288,7 @@ function scheduleReviveCheck() {
     stuck.close().catch(() => {});
     ctx = null;
     if (ensureContext()) startLoading();
-  }, 600);
+  }, REVIVE_WAIT_MS);
 }
 
 // ---------------------------------------------------------------- API
