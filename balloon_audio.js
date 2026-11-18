@@ -34,6 +34,24 @@ let limiter = null;
 let recDest = null; // MediaStreamAudioDestinationNode, connected only while recording
 let prefetched = null; // Promise<{FaustMonoDspGenerator, dsps}>
 let loading = null; // Promise<boolean>
+
+// ---------------------------------------------------------------- reporting
+// Sentry is loaded by web/index.html (absent on localhost or before it loads).
+// Real failures go up as exceptions; a context iOS will not restart is not an
+// exception, so it goes up as one message per stuck episode (see onGesture).
+function reportError(err, what) {
+  console.error(`[balloonAudio] ${what}`, err);
+  const e = err instanceof Error ? err : new Error(String(err));
+  window.Sentry?.captureException(e, { tags: { source: 'audio', what } });
+}
+function reportIssue(message, level, extra) {
+  console.warn(`[balloonAudio] ${message}`, extra);
+  window.Sentry?.captureMessage(`[balloonAudio] ${message}`, {
+    level,
+    tags: { source: 'audio', state: extra.state, fromBackground: String(extra.fromBackground) },
+    extra,
+  });
+}
 const nodes = new Map(); // voice index -> Faust node
 const paramPaths = new Map(); // voice index -> Map(shortName -> address)
 const latest = VOICES.map(() => new Map()); // last value per param, replayed on load
@@ -79,7 +97,7 @@ function prefetch() {
       });
       return { FaustMonoDspGenerator, dsps };
     })();
-    prefetched.catch((err) => console.error('[balloonAudio] prefetch failed', err));
+    prefetched.catch((err) => reportError(err, 'prefetch failed'));
   }
   return prefetched;
 }
@@ -123,7 +141,7 @@ async function loadVoices() {
     try {
       await createVoiceNode(FaustMonoDspGenerator, i, dsp);
     } catch (err) {
-      console.error(`[balloonAudio] voice ${dsp.voice} failed`, err);
+      reportError(err, `voice ${dsp.voice} failed`);
     }
   }
   console.info(`[balloonAudio] ready: ${[...nodes.keys()].map((i) => VOICES[i]).join(', ')} @ ${ctx.sampleRate} Hz`);
@@ -132,15 +150,26 @@ async function loadVoices() {
 
 // ---------------------------------------------------------------- unlock
 
+// iOS: play through the ringer/silent switch, like a media app. Set before
+// the context exists too, so WebKit never picks a play-and-record session
+// (which lights the microphone indicator).
+function setPlaybackSession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch (_) {}
+}
+
 // Builds the graph. Fine without a gesture: the context just starts
 // suspended, and voices can be loaded into it ahead of the first tap.
 function ensureContext() {
   if (!AudioContextClass) return false;
   if (!ctx || ctx.state === 'closed') {
+    setPlaybackSession();
     loading = null; // nodes belong to the old context
     nodes.clear();
     paramPaths.clear();
     ctx = new AudioContextClass({ latencyHint: 'interactive' });
+    ctx.addEventListener('statechange', onStateChange);
     master = ctx.createGain();
     master.gain.value = 0.7;
     // Safety limiter only (all four letters popping at once would clip);
@@ -164,7 +193,7 @@ function ensureContext() {
 function startLoading() {
   if (!loading) {
     loading = loadVoices().catch((err) => {
-      console.error('[balloonAudio] init failed', err);
+      reportError(err, 'init failed');
       loading = null;
       return false;
     });
@@ -175,10 +204,7 @@ function startLoading() {
 // Must run synchronously inside a user-gesture handler (Safari).
 function unlock() {
   if (!ensureContext()) return false;
-  // iOS: play through the ringer/silent switch, like a media app.
-  try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';
-  } catch (_) {}
+  setPlaybackSession();
   if (ctx.state !== 'running') {
     ctx.resume().catch(() => {});
     // A one-sample silent buffer completes the unlock on older iOS.
@@ -193,14 +219,74 @@ function unlock() {
 // On iOS and Android, touchstart/pointerdown(touch) do not count as user
 // activation; pointerup/touchend do. Listening natively on the document
 // (capture phase) catches whichever event qualifies, whatever Flutter does.
+// The listeners stay on for good: after a trip to the background (or another
+// app taking the audio session, e.g. switching Chrome -> Safari -> Chrome on
+// iOS) the context comes back suspended/interrupted and only a real gesture
+// can resume it. Flutter's pointerdown alone does not qualify on iOS.
 const GESTURES = ['pointerdown', 'pointerup', 'touchend', 'mousedown', 'keydown'];
 function onGesture() {
+  if (ctx && ctx.state === 'running' && nodes.size) return; // cheap path
   init();
-  if (ctx && ctx.state === 'running' && nodes.size) {
-    GESTURES.forEach((t) => document.removeEventListener(t, onGesture, true));
-  }
+  scheduleReviveCheck();
 }
 GESTURES.forEach((t) => document.addEventListener(t, onGesture, { capture: true, passive: true }));
+
+// iOS WebKit sometimes never lets a context out of 'interrupted' once another
+// app has had the audio session. If a gesture's resume() has not taken after
+// a moment, throw the context away and build a fresh one (voices reload from
+// the compiled cache in ~100 ms); the next tap starts it.
+//
+// Each run of taps that cannot get audio going is one "episode": reported to
+// Sentry once when it starts, and once more when it ends (recovered by a
+// rebuild) or gives up after MAX_REBUILDS.
+const MAX_REBUILDS = 3;
+let reviveTimer = 0;
+let episode = null; // { start, rebuilds, state, fromBackground, gaveUp }
+let lastShownAt = 0; // when the page last came back from the background
+
+function episodeInfo(state) {
+  return {
+    state,
+    fromBackground: !!lastShownAt && performance.now() - lastShownAt < 60000,
+    rebuilds: episode?.rebuilds ?? 0,
+    ms: episode ? Math.round(performance.now() - episode.start) : 0,
+    voices: nodes.size,
+  };
+}
+
+function onStateChange() {
+  if (ctx?.state !== 'running' || !episode) return;
+  if (episode.rebuilds > 0) {
+    reportIssue('audio recovered after rebuild', 'info', episodeInfo('running'));
+  }
+  episode = null;
+}
+
+function scheduleReviveCheck() {
+  if (reviveTimer || !ctx || ctx.state === 'running' || document.hidden) return;
+  if (episode?.gaveUp) return;
+  const stuck = ctx;
+  reviveTimer = setTimeout(async () => {
+    reviveTimer = 0;
+    if (ctx !== stuck || stuck.state === 'running' || document.hidden) return;
+    if (!loading || !(await loading)) return; // still loading: not stuck yet
+    if (stuck.state === 'running') return;
+    if (!episode) {
+      episode = { start: performance.now(), rebuilds: 0, gaveUp: false };
+      reportIssue('audio stuck after tap, rebuilding context', 'warning', episodeInfo(stuck.state));
+    }
+    if (episode.rebuilds >= MAX_REBUILDS) {
+      episode.gaveUp = true;
+      reportIssue('audio still stuck after rebuilds, giving up', 'error', episodeInfo(stuck.state));
+      return;
+    }
+    episode.rebuilds++;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    stuck.close().catch(() => {});
+    ctx = null;
+    if (ensureContext()) startLoading();
+  }, 600);
+}
 
 // ---------------------------------------------------------------- API
 
@@ -281,7 +367,7 @@ function startRecording() {
   try {
     recorder = new MediaRecorder(recDest.stream, type ? { mimeType: type } : undefined);
   } catch (err) {
-    console.error('[balloonAudio] MediaRecorder failed', err);
+    reportError(err, 'MediaRecorder failed');
     try { limiter.disconnect(recDest); } catch (_) {}
     recorder = null;
     return false;
@@ -299,6 +385,10 @@ function startRecording() {
       recChunks = [];
       clearTimeout(recTimer);
       try { limiter.disconnect(recDest); } catch (_) {}
+      // A live MediaStream track keeps iOS showing the capture indicator
+      // (and the slow audio path); end it and build a fresh one next time.
+      recDest?.stream.getTracks().forEach((t) => t.stop());
+      recDest = null;
       // Chrome's share sheet refuses an .m4a typed audio/mp4 ("Permission
       // denied") but takes the same file as audio/x-m4a.
       const fileType = ext === 'm4a' ? 'audio/x-m4a' : mime.split(';')[0];
@@ -347,6 +437,29 @@ if (new URLSearchParams(location.search).has('debug')) {
       `latency ${ctx ? ((ctx.baseLatency ?? 0) * 1000).toFixed(0) : '-'}+${ctx ? ((ctx.outputLatency ?? 0) * 1000).toFixed(0) : '-'} ms | level ${db.toFixed(0)} dB | peak ${peak.toFixed(0)} dB`;
   }, 150);
 }
+
+// In the background: stop any recording and suspend the context, so the
+// page holds no live audio session (iOS keeps its indicator lit otherwise).
+// Back in front: resume (works where the page already had a gesture; on iOS
+// the next tap resumes it via init()).
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    lastShownAt = performance.now();
+    // A new trip to the background starts a fresh episode (and new rebuilds).
+    episode = null;
+  }
+  if (!ctx) return;
+  if (document.hidden) {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (ctx.state === 'running') ctx.suspend().catch(() => {});
+  } else if (ctx.state !== 'running' && ctx.state !== 'closed') {
+    ctx.resume().catch(() => {});
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  ctx?.suspend().catch(() => {});
+});
 
 // Once the page is idle, download the voices and build them into a suspended
 // AudioContext, so the first tap only has to resume it (instant) instead of

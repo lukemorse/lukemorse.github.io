@@ -308,13 +308,15 @@
       -webkit-tap-highlight-color: transparent;
       animation: bob 3s ease-in-out infinite; animation-delay: -1.5s;
       transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .2s;
+      /* Always red (the day set's L), whatever the letter set. */
+      --rec-red: light-dark(#E53935, #F0544F);
     }
     #rec[hidden], #rec-puff[hidden] { display: none; }
     #rec:hover { animation-play-state: paused; transform: scale(1.12) rotate(8deg); }
     #rec:active { transform: scale(.88); }
     #rec:focus-visible { outline: 2px dashed var(--ink); outline-offset: 3px; }
     #rec .dot {
-      width: 14px; height: 14px; border-radius: 50%; background: var(--l);
+      width: 14px; height: 14px; border-radius: 50%; background: var(--rec-red);
       transition: border-radius .2s, width .2s, height .2s, background-color .2s;
     }
     #rec .share, #rec .download { display: none; width: 20px; height: 20px; }
@@ -323,15 +325,15 @@
       font: 700 12px/1 ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif;
       font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap;
     }
-    #rec[data-state="rec"] { background: var(--l); animation: rec-pulse 1.2s ease-out infinite; }
+    #rec[data-state="rec"] { background: var(--rec-red); animation: rec-pulse 1.2s ease-out infinite; }
     #rec[data-state="rec"] .dot { width: 12px; height: 12px; border-radius: 3px; background: #fff; }
     #rec[data-state="busy"] .dot { opacity: .5; }
     #rec[data-state="share"], #rec[data-state="download"] { background: var(--k-t); }
     #rec[data-state="share"] .dot, #rec[data-state="download"] .dot { display: none; }
     #rec[data-state="share"] .share, #rec[data-state="download"] .download { display: block; }
     @keyframes rec-pulse {
-      0% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 0 color-mix(in srgb, var(--l) 55%, transparent); }
-      100% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 12px color-mix(in srgb, var(--l) 0%, transparent); }
+      0% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 0 color-mix(in srgb, var(--rec-red) 55%, transparent); }
+      100% { box-shadow: 0 3px 8px rgba(0,0,0,.18), 0 0 0 12px color-mix(in srgb, var(--rec-red) 0%, transparent); }
     }
     /* Its puff of cloud, the i's mirrored. */
     #rec-puff {
