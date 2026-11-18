@@ -29,7 +29,8 @@ const asset = (p) => new URL(p, document.baseURI).href;
 let ctx = null;
 let master = null;
 let analyser = null;
-let recDest = null; // MediaStreamAudioDestinationNode the recorder listens to
+let limiter = null;
+let recDest = null; // MediaStreamAudioDestinationNode, connected only while recording
 let prefetched = null; // Promise<{FaustMonoDspGenerator, dsps}>
 let loading = null; // Promise<boolean>
 const nodes = new Map(); // voice index -> Faust node
@@ -143,7 +144,7 @@ function ensureContext() {
     master.gain.value = 0.7;
     // Safety limiter only (all four letters popping at once would clip);
     // every sound itself comes from the Faust voices.
-    const limiter = ctx.createDynamicsCompressor();
+    limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -3;
     limiter.knee.value = 0;
     limiter.ratio.value = 20;
@@ -154,10 +155,7 @@ function ensureContext() {
     master.connect(limiter);
     limiter.connect(ctx.destination);
     limiter.connect(analyser);
-    if (ctx.createMediaStreamDestination) {
-      recDest = ctx.createMediaStreamDestination();
-      limiter.connect(recDest);
-    }
+    recDest = null; // belonged to the old context
   }
   return true;
 }
@@ -268,6 +266,10 @@ function startRecording() {
     return false;
   }
   init(); // a gesture: unlock audio too, so recording can be the first thing you do
+  // Tapped in only while recording: on iOS a live MediaStream destination
+  // moves the whole context onto a slower path and every tap lags.
+  if (!recDest && ctx?.createMediaStreamDestination) recDest = ctx.createMediaStreamDestination();
+  if (recDest) limiter.connect(recDest);
   if (!recDest) {
     console.warn('[rec] no MediaStream destination on this AudioContext');
     return false;
@@ -277,6 +279,7 @@ function startRecording() {
     recorder = new MediaRecorder(recDest.stream, type ? { mimeType: type } : undefined);
   } catch (err) {
     console.error('[balloonAudio] MediaRecorder failed', err);
+    try { limiter.disconnect(recDest); } catch (_) {}
     recorder = null;
     return false;
   }
@@ -292,6 +295,7 @@ function startRecording() {
       recorder = null;
       recChunks = [];
       clearTimeout(recTimer);
+      try { limiter.disconnect(recDest); } catch (_) {}
       // Chrome's share sheet refuses an .m4a typed audio/mp4 ("Permission
       // denied") but takes the same file as audio/x-m4a.
       const fileType = ext === 'm4a' ? 'audio/x-m4a' : mime.split(';')[0];
@@ -336,7 +340,8 @@ if (new URLSearchParams(location.search).has('debug')) {
     peak = Math.max(peak, db);
     box.textContent =
       `audio ${ctx ? ctx.state : 'none'} | voices ${nodes.size} | ` +
-      `${ctx ? ctx.sampleRate : '-'} Hz | level ${db.toFixed(0)} dB | peak ${peak.toFixed(0)} dB`;
+      `${ctx ? ctx.sampleRate : '-'} Hz | ` +
+      `latency ${ctx ? ((ctx.baseLatency ?? 0) * 1000).toFixed(0) : '-'}+${ctx ? ((ctx.outputLatency ?? 0) * 1000).toFixed(0) : '-'} ms | level ${db.toFixed(0)} dB | peak ${peak.toFixed(0)} dB`;
   }, 150);
 }
 
