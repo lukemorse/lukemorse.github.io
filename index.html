@@ -13,6 +13,17 @@
   <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/Icon-180.png">
   <title>Luke Morse</title>
+  <!-- Link previews (iMessage, Slack, …). og.png comes from tool/gen_icons.mjs.
+       Absolute URLs: scrapers don't resolve against <base>. -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://lukemorse.dev/">
+  <meta property="og:title" content="Luke Morse">
+  <meta property="og:description" content="Balloon letters you can play">
+  <meta property="og:image" content="https://lukemorse.dev/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A red-to-orange balloon letter L on a light blue sky">
+  <meta name="twitter:card" content="summary_large_image">
 
   <script>
     // Crash reports (Sentry, errors only). First script on the page so it
