@@ -34,7 +34,13 @@
     (() => {
       const SENTRY_KEY = '3b69a128800c9a3f6e9b71a364fb6a22';
       const local = /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(location.hostname);
-      window.sentryOnLoad = () => Sentry.init({ enabled: !local });
+      window.sentryOnLoad = () => Sentry.init({
+        enabled: !local,
+        // Noise from visitors' browser extensions, not from this site.
+        // Extension promise rejections carry no stack, so match the message.
+        ignoreErrors: [/runtime\.sendMessage\(\)/, /Extension context invalidated/],
+        denyUrls: [/^(chrome|moz|safari(-web)?)-extension:\/\//],
+      });
       // Dart errors arrive here from lib/audio/js_bridge.dart (reportError).
       window.balloonReport = (message, stack) => {
         const err = new Error(message);
