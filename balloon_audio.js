@@ -34,6 +34,7 @@ let limiter = null;
 let recDest = null; // MediaStreamAudioDestinationNode, connected only while recording
 let prefetched = null; // Promise<{FaustMonoDspGenerator, dsps}>
 let loading = null; // Promise<boolean>
+let loadedCtx = null; // the context whose voices have finished loading
 
 // ---------------------------------------------------------------- reporting
 // Sentry is loaded by web/index.html (absent on localhost or before it loads).
@@ -194,7 +195,11 @@ function ensureContext() {
 
 function startLoading() {
   if (!loading) {
-    loading = loadVoices().catch((err) => {
+    const forCtx = ctx;
+    loading = loadVoices().then((ok) => {
+      if (ok) loadedCtx = forCtx;
+      return ok;
+    }).catch((err) => {
       reportError(err, 'init failed');
       loading = null;
       return false;
@@ -235,8 +240,11 @@ GESTURES.forEach((t) => document.addEventListener(t, onGesture, { capture: true,
 
 // iOS WebKit sometimes never lets a context out of 'interrupted' once another
 // app has had the audio session. If a gesture's resume() has not taken after
-// REVIVE_WAIT_MS (a fresh context can take ~1 s to start on some iPhones), throw the context away and build a fresh one (voices reload from
-// the compiled cache in ~100 ms); the next tap starts it.
+// REVIVE_WAIT_MS (a fresh context can take ~1 s to start on some iPhones),
+// throw the context away and build a fresh one (voices reload from the
+// compiled cache in ~100 ms); the next tap starts it. Time spent loading
+// voices does not count: WebKit can hold resume() back until the worklets
+// are in, so the wait starts over once they are.
 //
 // Each run of taps that cannot get audio going is one "episode": reported to
 // Sentry once when it starts, and once more when it ends (recovered by a
@@ -272,8 +280,11 @@ function scheduleReviveCheck() {
   reviveTimer = setTimeout(async () => {
     reviveTimer = 0;
     if (ctx !== stuck || stuck.state === 'running' || document.hidden) return;
-    if (!loading || !(await loading)) return; // still loading: not stuck yet
-    if (stuck.state === 'running') return;
+    if (loadedCtx !== stuck) {
+      // Still loading: not stuck yet. Give it a full wait once loading is done.
+      if (loading && (await loading)) scheduleReviveCheck();
+      return;
+    }
     if (!episode) {
       episode = { start: performance.now(), rebuilds: 0, gaveUp: false };
       reportIssue('audio stuck after tap, rebuilding context', 'warning', episodeInfo(stuck.state));
